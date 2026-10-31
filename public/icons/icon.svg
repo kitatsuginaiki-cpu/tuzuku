@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#F7F7F4"/>
+  <g transform="translate(256 256) scale(1) translate(-256 -256)">
+    <text x="236" y="330" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans JP, Hiragino Sans, sans-serif"
+      font-weight="800" font-size="270" fill="#142B45">つ</text>
+    <circle cx="372" cy="340" r="30" fill="none" stroke="#427C67" stroke-width="18"/>
+  </g>
+</svg>

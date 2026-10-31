@@ -1,0 +1,20 @@
+{
+  "name": "つづく。",
+  "short_name": "つづく。",
+  "description": "止まっても、また始められる。学習を始める・続ける・再開するための習慣化アプリ。",
+  "lang": "ja",
+  "dir": "ltr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F7F7F4",
+  "theme_color": "#F7F7F4",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
