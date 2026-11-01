@@ -26,7 +26,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # 共有・同期の接続先（Supabase）。未設定ならローカルだけで動く版になる。
+      # 入れるのは公開してよい Project URL と anon キーだけ（service_role キーは絶対に入れない）。
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -40,3 +45,10 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # データベースの権限（RLS）を実際の PostgreSQL で検証する（公開はブロックしない）
+  rls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo bash scripts/test-rls.sh

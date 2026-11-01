@@ -10,6 +10,10 @@ export type SessionStatus = 'running' | 'paused' | 'completing';
 
 export interface ActiveSession {
   id: string;
+  /** v7〜：どの習慣のセッションか */
+  habitId: string;
+  /** 小さな一手で始めた場合、選んだ「こんな日は」 */
+  copingWhen: string | null;
   mode: SessionMode;
   /** 開始時点の「次にやること」。未設定なら空文字。 */
   title: string;
@@ -48,9 +52,13 @@ export function createSession(opts: {
   id?: string;
   fromBookmark?: boolean;
   openToStartMs?: number | null;
+  habitId?: string;
+  copingWhen?: string | null;
 }): ActiveSession {
   return {
     id: opts.id ?? newId(),
+    habitId: opts.habitId ?? '',
+    copingWhen: opts.copingWhen ?? null,
     mode: opts.mode,
     title: opts.title,
     subject: opts.subject,
@@ -172,6 +180,8 @@ export function sanitizeActive(raw: unknown, now: number): ActiveSession | null 
   const before = r.statusBeforeComplete === 'running' || r.statusBeforeComplete === 'paused' ? r.statusBeforeComplete : null;
   return {
     id: r.id,
+    habitId: typeof r.habitId === 'string' ? r.habitId : '',
+    copingWhen: typeof r.copingWhen === 'string' ? r.copingWhen.slice(0, 60) : null,
     mode: r.mode === 'small' || r.mode === 'two_minute' ? 'small' : 'standard',
     title: typeof r.title === 'string' ? r.title.slice(0, LIMITS.nextAction) : '',
     subject: typeof r.subject === 'string' ? r.subject.slice(0, LIMITS.subject) : '',

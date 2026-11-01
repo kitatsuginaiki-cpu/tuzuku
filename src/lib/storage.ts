@@ -1,43 +1,75 @@
 /**
- * 永続化層。IndexedDB を優先し、使えなければ localStorage、それも不可ならメモリ（非永続・警告表示）。
- * 学習終了の保存は「記録追加・進行中セッション削除・次の一歩更新」を 1 トランザクションで行う。
+ * 永続化層（v7）。IndexedDB を優先し、使えなければ localStorage、それも不可ならメモリ（非永続・警告表示）。
+ * - 複数の書き込みは1回の原子的な操作（write）で行う。
+ * - v6 の設定（kv:settings）は移行後も残し、移行前の状態を書き出せるようにする。
+ * - outbox：ログイン中だけ使う同期待ちの変更（サーバーへ送る前にローカルへ確定させる）。
  */
 import { sanitizeActive, type ActiveSession } from './session';
-import { DEFAULT_SETTINGS, sanitizeSettings, type Settings, type StudyRecord } from './records';
+import type { StudyRecord } from './records';
 import { normalizeRecord } from './backup';
 import { DEFAULT_META, sanitizeMeta, sanitizeReviews, type Meta, type Review } from './plan';
+import { migrateFromV6, sanitizeAppSettings, sanitizeHabits, type AppSettings, type Habit } from './model';
 
 export type StorageKind = 'indexeddb' | 'localStorage' | 'memory';
+export type SyncKind = 'habit' | 'record' | 'review' | 'settings';
+
+export interface OutboxItem {
+  key: string;
+  kind: SyncKind;
+  id: string;
+  /** null は削除（トゥームストーン） */
+  payload: unknown | null;
+  updatedAt: string;
+}
+
+export interface AccountState {
+  userId: string;
+  email: string;
+  displayName: string;
+  avatar: string;
+  lastPulledAt: string | null;
+}
 
 export interface LoadedData {
-  settings: Settings;
+  habits: Habit[];
+  settings: AppSettings;
   active: ActiveSession | null;
   records: StudyRecord[];
   meta: Meta;
   reviews: Review[];
+  account: AccountState | null;
+  /** 今回の起動で v6 から移行したか */
+  migratedFromV6: boolean;
+  /** 移行前の v6 データ（書き出し用。移行していなければ null） */
+  v6Backup: { settings: unknown; records: StudyRecord[] } | null;
 }
 
-export interface Repository {
+export type Op =
+  | { t: 'kv'; key: string; value: unknown }
+  | { t: 'kvDel'; key: string }
+  | { t: 'rec'; value: StudyRecord }
+  | { t: 'recDel'; id: string }
+  | { t: 'recClear' }
+  | { t: 'out'; item: OutboxItem }
+  | { t: 'outDel'; key: string }
+  | { t: 'outClear' };
+
+/** 低レベルの保存先（IndexedDB / JSON） */
+interface Store {
   readonly kind: StorageKind;
-  load(): Promise<LoadedData>;
-  saveSettings(settings: Settings): Promise<void>;
-  saveActive(active: ActiveSession | null): Promise<void>;
-  /** 冪等：同じ ID の記録が既にあれば上書きせず 'duplicate' を返す */
-  completeSession(record: StudyRecord, settings: Settings): Promise<'saved' | 'duplicate'>;
-  putRecord(record: StudyRecord): Promise<void>;
-  deleteRecord(id: string): Promise<void>;
-  /** 記録を追加（既存IDはスキップ）。追加件数を返す */
-  addRecords(records: StudyRecord[], settings: Settings): Promise<number>;
-  replaceAll(settings: Settings, records: StudyRecord[], reviews?: Review[]): Promise<void>;
-  saveMeta(meta: Meta): Promise<void>;
-  /** 週の見直しを保存（見直し履歴の追加・メタ更新・設定更新を1回で） */
-  saveReview(review: Review, meta: Meta, settings: Settings): Promise<void>;
+  getKV(keys: string[]): Promise<Record<string, unknown>>;
+  getRecords(): Promise<unknown[]>;
+  getOutbox(): Promise<OutboxItem[]>;
+  write(ops: Op[]): Promise<void>;
 }
+
+/* ------------------------------ IndexedDB ------------------------------ */
 
 export const DB_NAME = 'tsuzuku-v5';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const KV = 'kv';
 const RECORDS = 'records';
+const OUTBOX = 'outbox';
 
 function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -68,6 +100,7 @@ export function openDatabase(name = DB_NAME): Promise<IDBDatabase> {
         const store = db.createObjectStore(RECORDS, { keyPath: 'id' });
         store.createIndex('studyDate', 'studyDate');
       }
+      if (!db.objectStoreNames.contains(OUTBOX)) db.createObjectStore(OUTBOX, { keyPath: 'key' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -75,265 +108,180 @@ export function openDatabase(name = DB_NAME): Promise<IDBDatabase> {
   });
 }
 
+class IdbStore implements Store {
+  readonly kind = 'indexeddb' as const;
+  constructor(private db: IDBDatabase) {
+    db.onversionchange = () => db.close();
+  }
+  async getKV(keys: string[]) {
+    const tx = this.db.transaction(KV, 'readonly');
+    const kv = tx.objectStore(KV);
+    const vals = await Promise.all(keys.map((k) => reqToPromise(kv.get(k))));
+    return Object.fromEntries(keys.map((k, i) => [k, vals[i]]));
+  }
+  async getRecords() {
+    return (await reqToPromise(this.db.transaction(RECORDS, 'readonly').objectStore(RECORDS).getAll())) as unknown[];
+  }
+  async getOutbox() {
+    return (await reqToPromise(this.db.transaction(OUTBOX, 'readonly').objectStore(OUTBOX).getAll())) as OutboxItem[];
+  }
+  async write(ops: Op[]) {
+    const tx = this.db.transaction([KV, RECORDS, OUTBOX], 'readwrite');
+    const kv = tx.objectStore(KV);
+    const rec = tx.objectStore(RECORDS);
+    const out = tx.objectStore(OUTBOX);
+    for (const op of ops) {
+      if (op.t === 'kv') kv.put(op.value, op.key);
+      else if (op.t === 'kvDel') kv.delete(op.key);
+      else if (op.t === 'rec') rec.put(op.value);
+      else if (op.t === 'recDel') rec.delete(op.id);
+      else if (op.t === 'recClear') rec.clear();
+      else if (op.t === 'out') out.put(op.item);
+      else if (op.t === 'outDel') out.delete(op.key);
+      else if (op.t === 'outClear') out.clear();
+    }
+    await txDone(tx);
+  }
+}
+
+/* ------------------------------ JSON（localStorage / メモリ） ------------------------------ */
+
+type JsonState = { kv: Record<string, unknown>; records: Record<string, StudyRecord>; outbox: Record<string, OutboxItem> };
+
+class JsonStore implements Store {
+  private mem: JsonState = { kv: {}, records: {}, outbox: {} };
+  constructor(
+    readonly kind: 'localStorage' | 'memory',
+    private lsKey = 'tsuzuku-v7-state',
+  ) {
+    if (kind === 'localStorage') {
+      const raw = localStorage.getItem(lsKey);
+      if (raw) this.mem = JSON.parse(raw);
+      else {
+        // v6 の localStorage 形式から読み込む（移行は Repository が行う）
+        const v6 = localStorage.getItem('tsuzuku-v5-state');
+        if (v6) {
+          const o = JSON.parse(v6);
+          this.mem.kv = { settings: o.settings, active: o.active, meta: o.meta, reviews: o.reviews };
+          for (const r of Array.isArray(o.records) ? o.records : []) if (r?.id) this.mem.records[r.id] = r;
+        }
+      }
+    }
+  }
+  async getKV(keys: string[]) {
+    return Object.fromEntries(keys.map((k) => [k, structuredClone(this.mem.kv[k])]));
+  }
+  async getRecords() {
+    return Object.values(this.mem.records).map((r) => ({ ...r }));
+  }
+  async getOutbox() {
+    return Object.values(this.mem.outbox).map((r) => ({ ...r }));
+  }
+  async write(ops: Op[]) {
+    const next: JsonState = structuredClone(this.mem);
+    for (const op of ops) {
+      if (op.t === 'kv') next.kv[op.key] = structuredClone(op.value);
+      else if (op.t === 'kvDel') delete next.kv[op.key];
+      else if (op.t === 'rec') next.records[op.value.id] = { ...op.value };
+      else if (op.t === 'recDel') delete next.records[op.id];
+      else if (op.t === 'recClear') next.records = {};
+      else if (op.t === 'out') next.outbox[op.item.key] = { ...op.item };
+      else if (op.t === 'outDel') delete next.outbox[op.key];
+      else if (op.t === 'outClear') next.outbox = {};
+    }
+    if (this.kind === 'localStorage') localStorage.setItem(this.lsKey, JSON.stringify(next));
+    this.mem = next;
+  }
+}
+
+/* ------------------------------ Repository ------------------------------ */
+
 function cleanRecords(raw: unknown[]): StudyRecord[] {
   const out: StudyRecord[] = [];
   const ids = new Set<string>();
   for (const r of raw) {
     const rec = normalizeRecord(r);
-    if (rec && rec.id && !ids.has(rec.id) && Number.isInteger(rec.minutes) && rec.minutes > 0) {
-      ids.add(rec.id);
-      out.push(rec);
-    }
+    if (!rec || !rec.id || ids.has(rec.id) || !Number.isInteger(rec.minutes) || rec.minutes < 0) continue;
+    if (rec.minutes === 0 && !rec.habitId) continue; // v6 以前の0分は不正
+    ids.add(rec.id);
+    out.push(rec);
   }
   return out;
 }
 
-export class IdbRepository implements Repository {
-  readonly kind = 'indexeddb' as const;
-  constructor(private db: IDBDatabase) {
-    // 他タブでのバージョン更新時に接続を閉じる
-    db.onversionchange = () => db.close();
+const KV_KEYS = ['habits', 'appSettings', 'settings', 'active', 'meta', 'reviews', 'account', 'v6Backup'];
+
+export class Repository {
+  constructor(private store: Store) {}
+  get kind() {
+    return this.store.kind;
   }
 
   async load(): Promise<LoadedData> {
-    const tx = this.db.transaction([KV, RECORDS], 'readonly');
-    const kv = tx.objectStore(KV);
-    const [settings, active, records, meta, reviews] = await Promise.all([
-      reqToPromise(kv.get('settings')),
-      reqToPromise(kv.get('active')),
-      reqToPromise(tx.objectStore(RECORDS).getAll()),
-      reqToPromise(kv.get('meta')),
-      reqToPromise(kv.get('reviews')),
-    ]);
-    return {
-      settings: settings ? sanitizeSettings(settings) : { ...DEFAULT_SETTINGS },
-      active: sanitizeActive(active, Date.now()),
-      records: cleanRecords(records as unknown[]),
-      meta: meta ? sanitizeMeta(meta) : { ...DEFAULT_META },
-      reviews: sanitizeReviews(reviews),
-    };
-  }
+    const kv = await this.store.getKV(KV_KEYS);
+    let records = cleanRecords(await this.store.getRecords());
+    let habits = sanitizeHabits(kv.habits);
+    let settings = sanitizeAppSettings(kv.appSettings);
+    let migratedFromV6 = false;
+    let v6Backup = (kv.v6Backup as LoadedData['v6Backup']) ?? null;
 
-  async saveMeta(meta: Meta) {
-    const tx = this.db.transaction(KV, 'readwrite');
-    tx.objectStore(KV).put(meta, 'meta');
-    await txDone(tx);
-  }
-
-  async saveReview(review: Review, meta: Meta, settings: Settings) {
-    const tx = this.db.transaction(KV, 'readwrite');
-    const kv = tx.objectStore(KV);
-    const g = kv.get('reviews');
-    g.onsuccess = () => {
-      const list = sanitizeReviews(g.result).filter((r) => r.id !== review.id);
-      kv.put([...list, review], 'reviews');
-      kv.put(meta, 'meta');
-      kv.put(settings, 'settings');
-    };
-    await txDone(tx);
-  }
-
-  async saveSettings(settings: Settings) {
-    const tx = this.db.transaction(KV, 'readwrite');
-    tx.objectStore(KV).put(settings, 'settings');
-    await txDone(tx);
-  }
-
-  async saveActive(active: ActiveSession | null) {
-    const tx = this.db.transaction(KV, 'readwrite');
-    if (active) tx.objectStore(KV).put(active, 'active');
-    else tx.objectStore(KV).delete('active');
-    await txDone(tx);
-  }
-
-  async completeSession(record: StudyRecord, settings: Settings) {
-    const tx = this.db.transaction([KV, RECORDS], 'readwrite');
-    const store = tx.objectStore(RECORDS);
-    let result: 'saved' | 'duplicate' = 'saved';
-    const get = store.get(record.id);
-    get.onsuccess = () => {
-      if (get.result) {
-        result = 'duplicate';
-      } else {
-        store.add(record);
+    // v7 の習慣データがまだない → v6 から移行（1回だけ）
+    if (kv.habits === undefined) {
+      const m = migrateFromV6(kv.settings, records);
+      const ops: Op[] = [
+        { t: 'kv', key: 'habits', value: m.habits },
+        { t: 'kv', key: 'appSettings', value: m.settings },
+      ];
+      if (m.migrated) {
+        v6Backup = { settings: kv.settings ?? null, records };
+        ops.push({ t: 'kv', key: 'v6Backup', value: v6Backup });
+        for (const r of m.records) ops.push({ t: 'rec', value: r });
+        migratedFromV6 = true;
       }
-      const kv = tx.objectStore(KV);
-      kv.delete('active');
-      kv.put(settings, 'settings');
-    };
-    await txDone(tx);
-    return result;
-  }
-
-  async putRecord(record: StudyRecord) {
-    const tx = this.db.transaction(RECORDS, 'readwrite');
-    tx.objectStore(RECORDS).put(record);
-    await txDone(tx);
-  }
-
-  async deleteRecord(id: string) {
-    const tx = this.db.transaction(RECORDS, 'readwrite');
-    tx.objectStore(RECORDS).delete(id);
-    await txDone(tx);
-  }
-
-  async addRecords(records: StudyRecord[], settings: Settings) {
-    const tx = this.db.transaction([KV, RECORDS], 'readwrite');
-    const store = tx.objectStore(RECORDS);
-    let added = 0;
-    for (const r of records) {
-      const g = store.get(r.id);
-      g.onsuccess = () => {
-        if (!g.result) {
-          store.add(r);
-          added++;
-        }
-      };
+      await this.store.write(ops);
+      habits = m.habits;
+      settings = m.settings;
+      records = m.records;
     }
-    tx.objectStore(KV).put(settings, 'settings');
-    await txDone(tx);
-    return added;
-  }
 
-  async replaceAll(settings: Settings, records: StudyRecord[], reviews: Review[] = []) {
-    const tx = this.db.transaction([KV, RECORDS], 'readwrite');
-    const store = tx.objectStore(RECORDS);
-    store.clear();
-    for (const r of records) store.add(r);
-    tx.objectStore(KV).put(settings, 'settings');
-    tx.objectStore(KV).put(reviews, 'reviews');
-    await txDone(tx);
-  }
-}
-
-/** localStorage 版（IndexedDB が使えない環境用）。1キーに全体を保存。 */
-export class LocalStorageRepository implements Repository {
-  readonly kind = 'localStorage' as const;
-  static KEY = 'tsuzuku-v5-state';
-  private read(): { settings: unknown; active: unknown; records: unknown[]; meta: unknown; reviews: unknown } {
-    const raw = localStorage.getItem(LocalStorageRepository.KEY);
-    if (!raw) return { settings: null, active: null, records: [], meta: null, reviews: [] };
-    const obj = JSON.parse(raw);
-    return { settings: obj.settings, active: obj.active, records: Array.isArray(obj.records) ? obj.records : [], meta: obj.meta, reviews: obj.reviews };
-  }
-  private write(data: { settings: unknown; active: unknown; records: unknown[]; meta: unknown; reviews: unknown }) {
-    localStorage.setItem(LocalStorageRepository.KEY, JSON.stringify(data));
-  }
-  async load(): Promise<LoadedData> {
-    const d = this.read();
     return {
-      settings: d.settings ? sanitizeSettings(d.settings) : { ...DEFAULT_SETTINGS },
-      active: sanitizeActive(d.active, Date.now()),
-      records: cleanRecords(d.records),
-      meta: d.meta ? sanitizeMeta(d.meta) : { ...DEFAULT_META },
-      reviews: sanitizeReviews(d.reviews),
+      habits,
+      settings,
+      active: sanitizeActive(kv.active, Date.now()),
+      records,
+      meta: kv.meta ? sanitizeMeta(kv.meta) : { ...DEFAULT_META },
+      reviews: sanitizeReviews(kv.reviews),
+      account: sanitizeAccount(kv.account),
+      migratedFromV6,
+      v6Backup,
     };
   }
-  async saveMeta(meta: Meta) {
-    const d = this.read();
-    this.write({ ...d, meta });
+
+  write(ops: Op[]) {
+    return this.store.write(ops);
   }
-  async saveReview(review: Review, meta: Meta, settings: Settings) {
-    const d = this.read();
-    const list = sanitizeReviews(d.reviews).filter((r) => r.id !== review.id);
-    this.write({ ...d, reviews: [...list, review], meta, settings });
-  }
-  async saveSettings(settings: Settings) {
-    const d = this.read();
-    this.write({ ...d, settings });
-  }
-  async saveActive(active: ActiveSession | null) {
-    const d = this.read();
-    this.write({ ...d, active });
-  }
-  async completeSession(record: StudyRecord, settings: Settings) {
-    const d = this.read();
-    const dup = d.records.some((r) => (r as StudyRecord)?.id === record.id);
-    this.write({ ...d, settings, active: null, records: dup ? d.records : [...d.records, record] });
-    return dup ? ('duplicate' as const) : ('saved' as const);
-  }
-  async putRecord(record: StudyRecord) {
-    const d = this.read();
-    const others = d.records.filter((r) => (r as StudyRecord)?.id !== record.id);
-    this.write({ ...d, records: [...others, record] });
-  }
-  async deleteRecord(id: string) {
-    const d = this.read();
-    this.write({ ...d, records: d.records.filter((r) => (r as StudyRecord)?.id !== id) });
-  }
-  async addRecords(records: StudyRecord[], settings: Settings) {
-    const d = this.read();
-    const ids = new Set(d.records.map((r) => (r as StudyRecord)?.id));
-    const fresh = records.filter((r) => !ids.has(r.id));
-    this.write({ ...d, settings, records: [...d.records, ...fresh] });
-    return fresh.length;
-  }
-  async replaceAll(settings: Settings, records: StudyRecord[], reviews: Review[] = []) {
-    const d = this.read();
-    this.write({ ...d, settings, records, reviews });
+  getOutbox() {
+    return this.store.getOutbox();
   }
 }
 
-/** 非永続（最後の手段）。画面に警告を出す。 */
-export class MemoryRepository implements Repository {
-  readonly kind = 'memory' as const;
-  private settings: Settings = { ...DEFAULT_SETTINGS };
-  private active: ActiveSession | null = null;
-  private records = new Map<string, StudyRecord>();
-  private meta: Meta = { ...DEFAULT_META };
-  private reviews: Review[] = [];
-  async load() {
-    return { settings: { ...this.settings }, active: this.active, records: [...this.records.values()], meta: { ...this.meta }, reviews: [...this.reviews] };
-  }
-  async saveMeta(m: Meta) {
-    this.meta = { ...m };
-  }
-  async saveReview(r: Review, m: Meta, s: Settings) {
-    this.reviews = [...this.reviews.filter((x) => x.id !== r.id), r];
-    this.meta = { ...m };
-    this.settings = { ...s };
-  }
-  async saveSettings(s: Settings) {
-    this.settings = { ...s };
-  }
-  async saveActive(a: ActiveSession | null) {
-    this.active = a;
-  }
-  async completeSession(r: StudyRecord, s: Settings) {
-    const dup = this.records.has(r.id);
-    if (!dup) this.records.set(r.id, r);
-    this.active = null;
-    this.settings = { ...s };
-    return dup ? ('duplicate' as const) : ('saved' as const);
-  }
-  async putRecord(r: StudyRecord) {
-    this.records.set(r.id, r);
-  }
-  async deleteRecord(id: string) {
-    this.records.delete(id);
-  }
-  async addRecords(rs: StudyRecord[], s: Settings) {
-    let n = 0;
-    for (const r of rs)
-      if (!this.records.has(r.id)) {
-        this.records.set(r.id, r);
-        n++;
-      }
-    this.settings = { ...s };
-    return n;
-  }
-  async replaceAll(s: Settings, rs: StudyRecord[], reviews: Review[] = []) {
-    this.settings = { ...s };
-    this.records = new Map(rs.map((r) => [r.id, r]));
-    this.reviews = [...reviews];
-  }
+export function sanitizeAccount(raw: unknown): AccountState | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.userId !== 'string' || !r.userId) return null;
+  return {
+    userId: r.userId,
+    email: typeof r.email === 'string' ? r.email : '',
+    displayName: typeof r.displayName === 'string' ? r.displayName.slice(0, 20) : '',
+    avatar: typeof r.avatar === 'string' ? r.avatar.slice(0, 20) : 'green',
+    lastPulledAt: typeof r.lastPulledAt === 'string' ? r.lastPulledAt : null,
+  };
 }
 
 export async function openRepository(): Promise<Repository> {
   try {
-    const db = await openDatabase();
-    const repo = new IdbRepository(db);
-    await repo.load(); // 読み込みまで成功することを確認
+    const repo = new Repository(new IdbStore(await openDatabase()));
+    await repo.load(); // 読み込み（と必要なら移行）まで成功することを確認
     return repo;
   } catch (e) {
     console.warn('[つづく。] IndexedDB を利用できません。localStorage を使います。', e);
@@ -342,11 +290,21 @@ export async function openRepository(): Promise<Repository> {
     const k = '__tsuzuku_probe__';
     localStorage.setItem(k, '1');
     localStorage.removeItem(k);
-    return new LocalStorageRepository();
+    return new Repository(new JsonStore('localStorage'));
   } catch (e) {
     console.warn('[つづく。] localStorage も利用できません。データは保存されません。', e);
   }
-  return new MemoryRepository();
+  return new Repository(new JsonStore('memory'));
+}
+
+/** テスト用：メモリだけのリポジトリ */
+export function memoryRepository(): Repository {
+  return new Repository(new JsonStore('memory'));
+}
+
+/** テスト用：任意の名前の IndexedDB */
+export async function idbRepository(name: string): Promise<Repository> {
+  return new Repository(new IdbStore(await openDatabase(name)));
 }
 
 /** 保存領域を「永続」として扱うよう要求（ブラウザの自動削除を避ける。許可は保証されない） */
@@ -365,10 +323,6 @@ export async function requestPersistence(): Promise<boolean | null> {
 const LEGACY_DB = 'tsuzuku-db-v3';
 const LEGACY_LS = 'tsuzuku-state-v3';
 
-/**
- * 同一オリジンに v3.1 のデータがあれば読み取って返す（書き換えない）。
- * indexedDB.databases() が使えない環境では、DB を新規作成しないよう localStorage のみ確認する。
- */
 export async function readLegacyV3(): Promise<Record<string, unknown> | null> {
   try {
     const ls = localStorage.getItem(LEGACY_LS);

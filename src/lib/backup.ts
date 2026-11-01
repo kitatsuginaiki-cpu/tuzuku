@@ -8,33 +8,47 @@ import { sanitizeReviews, type Review } from './plan';
 import {
   cleanText,
   hasErrors,
-  sanitizeSettings,
   validateRecord,
-  type Settings,
   type StudyRecord,
 } from './records';
+import {
+  migrateFromV6,
+  sanitizeAppSettings,
+  sanitizeHabits,
+  validateRecordFor,
+  type AppSettings,
+  type Habit,
+} from './model';
 
 export const BACKUP_FORMAT = 'tsuzuku-backup';
-export const SCHEMA_VERSION = 2;
+/** 1=v5, 2=v6（単一プラン）, 3=v7（複数の習慣） */
+export const SCHEMA_VERSION = 3;
 
 export interface BackupFile {
   format: typeof BACKUP_FORMAT;
   schemaVersion: number;
   exportedAt: string;
   baseline: { minutes: number; asOf: string };
-  settings: Settings;
+  habits: Habit[];
+  appSettings: AppSettings;
   records: StudyRecord[];
-  /** v2〜：週の見直しの履歴 */
   reviews: Review[];
 }
 
-export function buildBackup(settings: Settings, records: readonly StudyRecord[], reviews: readonly Review[] = [], now = new Date()): BackupFile {
+export function buildBackup(
+  habits: readonly Habit[],
+  appSettings: AppSettings,
+  records: readonly StudyRecord[],
+  reviews: readonly Review[] = [],
+  now = new Date(),
+): BackupFile {
   return {
     format: BACKUP_FORMAT,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: now.toISOString(),
     baseline: { minutes: BASELINE.minutes, asOf: BASELINE.asOf },
-    settings: { ...settings, planDays: [...settings.planDays] },
+    habits: habits.map((h) => ({ ...h, planDays: [...h.planDays], copingPlans: h.copingPlans.map((c) => ({ ...c })) })),
+    appSettings: { ...appSettings },
     records: records.map((r) => ({ ...r })),
     reviews: reviews.map((r) => ({ ...r })),
   };
@@ -42,9 +56,15 @@ export function buildBackup(settings: Settings, records: readonly StudyRecord[],
 
 export class ImportError extends Error {}
 
-export type ParsedImport =
-  | { kind: 'backup'; settings: Settings; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null }
-  | { kind: 'legacy_v3'; legacy: LegacyCandidates };
+export interface ParsedBackup {
+  habits: Habit[];
+  settings: AppSettings;
+  records: StudyRecord[];
+  reviews: Review[];
+  exportedAt: string | null;
+}
+
+export type ParsedImport = ({ kind: 'backup' } & ParsedBackup) | { kind: 'legacy_v3'; legacy: LegacyCandidates };
 
 /** ファイル内容を解析する。不正なら日本語メッセージ付きの ImportError。 */
 export function parseImportText(text: string, today: string): ParsedImport {
@@ -62,7 +82,7 @@ export function parseImportText(text: string, today: string): ParsedImport {
   throw new ImportError('「つづく。」のバックアップファイルではありません。');
 }
 
-function parseBackupObject(obj: Record<string, unknown>, today: string) {
+function parseBackupObject(obj: Record<string, unknown>, today: string): ParsedBackup {
   if (typeof obj.schemaVersion !== 'number' || obj.schemaVersion < 1)
     throw new ImportError('バックアップのバージョンが不正です。');
   if (obj.schemaVersion > SCHEMA_VERSION)
@@ -70,23 +90,45 @@ function parseBackupObject(obj: Record<string, unknown>, today: string) {
   const b = obj.baseline as Record<string, unknown> | undefined;
   if (!b || b.minutes !== BASELINE.minutes || b.asOf !== BASELINE.asOf)
     throw new ImportError('確認済みの累計（2026年10月7日・17時間36分）が一致しないため読み込めません。');
-  if (!Array.isArray(obj.records)) throw new ImportError('学習記録の形式が正しくありません。');
+  if (!Array.isArray(obj.records)) throw new ImportError('記録の形式が正しくありません。');
   if (obj.records.length > LIMITS.records) throw new ImportError('記録の件数が多すぎます。');
-  const records: StudyRecord[] = [];
+
+  const raws: StudyRecord[] = [];
   const ids = new Set<string>();
   obj.records.forEach((r, i) => {
     const rec = normalizeRecord(r);
-    const errs = rec ? validateRecord(rec, today) : { id: '形式が不正です。' };
-    if (!rec || hasErrors(errs)) {
-      const first = Object.values(errs)[0];
-      throw new ImportError(`${i + 1}件目の記録に問題があります：${first}`);
-    }
+    if (!rec) throw new ImportError(`${i + 1}件目の記録に問題があります：形式が不正です。`);
     if (ids.has(rec.id)) throw new ImportError(`同じIDの記録が重複しています（${i + 1}件目）。`);
     ids.add(rec.id);
-    records.push(rec);
+    raws.push(rec);
+  });
+
+  let habits: Habit[];
+  let settings: AppSettings;
+  let records: StudyRecord[];
+  if (obj.schemaVersion >= 3) {
+    habits = sanitizeHabits(obj.habits);
+    settings = sanitizeAppSettings(obj.appSettings);
+    records = raws;
+  } else {
+    // v5/v6 のバックアップ：v6 と同じ移行（設定→簿記の習慣、記録に habitId）
+    raws.forEach((rec, i) => {
+      const errs = validateRecord(rec, today);
+      if (hasErrors(errs)) throw new ImportError(`${i + 1}件目の記録に問題があります：${Object.values(errs)[0]}`);
+    });
+    const m = migrateFromV6(obj.settings ?? {}, raws);
+    habits = m.habits;
+    settings = m.settings;
+    records = m.records;
+  }
+  const byId = new Map(habits.map((h) => [h.id, h]));
+  records.forEach((rec, i) => {
+    const errs = validateRecordFor(rec, rec.habitId ? byId.get(rec.habitId) : undefined, today);
+    if (hasErrors(errs)) throw new ImportError(`${i + 1}件目の記録に問題があります：${Object.values(errs)[0]}`);
   });
   return {
-    settings: sanitizeSettings(obj.settings),
+    habits,
+    settings,
     records,
     reviews: sanitizeReviews(obj.reviews),
     exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : null,
@@ -110,6 +152,8 @@ export function normalizeRecord(raw: unknown): StudyRecord | null {
   const source = r.source === 'timer' || r.source === 'manual' || r.source === 'import_v3' ? r.source : 'manual';
   const rec: StudyRecord = {
     id: typeof r.id === 'string' ? r.id : '',
+    ...(typeof r.habitId === 'string' && r.habitId ? { habitId: r.habitId.slice(0, 100) } : {}),
+    ...(r.kind === 'rest' ? { kind: 'rest' as const } : r.habitId ? { kind: 'done' as const } : {}),
     studyDate: typeof r.studyDate === 'string' ? r.studyDate : '',
     startedAt: isoOrNull(r.startedAt),
     endedAt: isoOrNull(r.endedAt),

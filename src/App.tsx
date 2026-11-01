@@ -1,27 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BASELINE } from './lib/config';
-import { formatJpDate, formatMinutes, localDate } from './lib/dates';
 import { weekFacts } from './lib/plan';
-import { totalMinutes } from './lib/records';
-import { StoreProvider, useStore, type Toast } from './store';
+import { formatTotal, habitTotal } from './lib/accumulate';
+import { StoreProvider, todayOf, useStore, type Toast } from './store';
 import { Logo } from './components/common';
-import { IconBars, IconChevronRight, IconGear, IconHome, IconPlan } from './components/Icons';
+import { IconBars, IconGear, IconHome, IconPeople, IconStack } from './components/Icons';
 import { Home } from './screens/Home';
-import { Plan } from './screens/Plan';
+import { HabitEditor } from './screens/HabitEditor';
 import { Review } from './screens/Review';
 import { SessionScreen } from './screens/Session';
 import { FinishScreen } from './screens/Finish';
 import { Records } from './screens/Records';
 import { Settings } from './screens/Settings';
+import { Stack } from './screens/Stack';
+import { Friends } from './screens/Friends';
+import { Privacy } from './screens/Privacy';
 
-type Route = '/' | '/records' | '/settings' | '/session' | '/plan' | '/review';
+type Route = '/' | '/stack' | '/friends' | '/records' | '/settings' | '/session' | '/habit' | '/review' | '/privacy';
 
 /**
  * URL のハッシュは「#records」のような単純な名前にする（「#/path」形式は使わない）。
  * 埋め込み先（Claude の Artifact など）で「#/…」や「settings」が使えないため。
- * 旧形式（#/records など）も読み取りは受け付ける。
+ * 旧形式（#/records など）も読み取りは受け付ける。v6 の #plan は今日へ。
  */
-const HASH: Record<Route, string> = { '/': '', '/records': 'records', '/settings': 'options', '/session': 'session', '/plan': 'plan', '/review': 'review' };
+const HASH: Record<Route, string> = {
+  '/': '',
+  '/stack': 'stack',
+  '/friends': 'friends',
+  '/records': 'records',
+  '/settings': 'options',
+  '/session': 'session',
+  '/habit': 'habit',
+  '/review': 'review',
+  '/privacy': 'privacy',
+};
 
 function readRoute(): Route {
   const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
@@ -58,6 +69,13 @@ export function App() {
   );
 }
 
+const TABS: [Route, string, (s: number) => React.ReactNode][] = [
+  ['/', '今日', (s) => <IconHome size={s} />],
+  ['/stack', '積み上げ', (s) => <IconStack size={s} />],
+  ['/friends', '仲間', (s) => <IconPeople size={s} />],
+  ['/records', '記録', (s) => <IconBars size={s} />],
+];
+
 function Shell({ route, navigate }: { route: Route; navigate: (r: string) => void }) {
   const { state } = useStore();
   const { active } = state;
@@ -81,9 +99,12 @@ function Shell({ route, navigate }: { route: Route; navigate: (r: string) => voi
   if (flow && active) {
     screen = active.status === 'completing' ? <FinishScreen key={`f-${active.id}`} active={active} navigate={navigate} /> : <SessionScreen active={active} navigate={navigate} />;
   } else if (route === '/records') screen = <Records navigate={navigate} />;
-  else if (route === '/plan') screen = <Plan navigate={navigate} />;
+  else if (route === '/stack') screen = <Stack navigate={navigate} />;
+  else if (route === '/friends') screen = <Friends navigate={navigate} />;
+  else if (route === '/habit') screen = <HabitEditor navigate={navigate} />;
   else if (route === '/review') screen = <Review navigate={navigate} />;
   else if (route === '/settings') screen = <Settings navigate={navigate} />;
+  else if (route === '/privacy') screen = <Privacy navigate={navigate} />;
   else screen = <Home navigate={navigate} />;
 
   const page = flow ? 'flow' : route === '/' || route === '/session' ? 'home' : route.slice(1);
@@ -104,7 +125,7 @@ function Shell({ route, navigate }: { route: Route; navigate: (r: string) => voi
 
 function SideNav({ route, navigate }: { route: Route; navigate: (r: string) => void }) {
   const item = (r: Route, label: string, icon: React.ReactNode) => (
-    <a href={toHref(r)} className={`side-link${route === r || (r === '/' && route === '/session') ? ' is-current' : ''}`} aria-current={route === r ? 'page' : undefined}
+    <a key={r} href={toHref(r)} className={`side-link${route === r || (r === '/' && route === '/session') ? ' is-current' : ''}`} aria-current={route === r ? 'page' : undefined}
       onClick={(e) => { e.preventDefault(); navigate(r); }}>
       {icon}
       <span>{label}</span>
@@ -113,59 +134,64 @@ function SideNav({ route, navigate }: { route: Route; navigate: (r: string) => v
   return (
     <nav className="sidenav" aria-label="メイン">
       <Logo />
-      <div className="side-main">
-        {item('/', '今日', <IconHome size={20} />)}
-        {item('/plan', 'プラン', <IconPlan size={20} />)}
-        {item('/records', '記録', <IconBars size={20} />)}
-      </div>
+      <div className="side-main">{TABS.map(([r, l, i]) => item(r, l, i(20)))}</div>
       <div className="side-sub">{item('/settings', '設定', <IconGear size={19} />)}</div>
     </nav>
   );
 }
 
 function BottomNav({ route, navigate }: { route: Route; navigate: (r: string) => void }) {
-  if (route === '/settings' || route === '/review') return null;
-  const item = (r: Route, label: string, icon: React.ReactNode) => (
-    <a href={toHref(r)} className={`tab${route === r ? ' is-current' : ''}`} aria-current={route === r ? 'page' : undefined}
-      onClick={(e) => { e.preventDefault(); navigate(r); }}>
-      {icon}
-      <span className="tab-label">{label}</span>
-    </a>
-  );
+  if (route === '/settings' || route === '/review' || route === '/habit' || route === '/privacy') return null;
   return (
     <nav className="bottomnav" aria-label="メイン">
-      {item('/', '今日', <IconHome size={24} />)}
-      {item('/plan', 'プラン', <IconPlan size={24} />)}
-      {item('/records', '記録', <IconBars size={24} />)}
+      {TABS.map(([r, label, icon]) => (
+        <a key={r} href={toHref(r)} className={`tab${route === r ? ' is-current' : ''}`} aria-current={route === r ? 'page' : undefined}
+          onClick={(e) => { e.preventDefault(); navigate(r); }}>
+          {icon(24)}
+          <span className="tab-label">{label}</span>
+        </a>
+      ))}
     </nav>
   );
 }
 
-/** PC：右側の補助情報。確認済みの累計と、この7日間の事実だけ。 */
+/** PC：右側の補助情報。積み上げと、この7日間の事実だけ。 */
 function InfoAside({ navigate }: { navigate: (r: string) => void }) {
   const { state } = useStore();
-  const total = totalMinutes(state.records);
-  const f = weekFacts(state.records, state.settings, localDate(), state.meta.firstUsedOn);
+  const today = todayOf(state.settings);
+  const list = state.habits.filter((h) => !h.archived).sort((a, b) => a.order - b.order);
+  if (!list.length) return <aside className="info" aria-label="補助情報" />;
   return (
     <aside className="info" aria-label="補助情報">
       <section className="info-block">
-        <h2 className="info-label">この7日間</h2>
-        <p className="info-value num">{f.studyDays}日</p>
-        <p className="help">
-          {state.settings.supportMode === 'plan' && f.plannedDays > 0 ? `予定の${f.plannedDays}日のうち${f.plannedDone}日・` : ''}
-          {formatMinutes(f.minutes)}
-        </p>
-        <button type="button" className="link-btn info-link" onClick={() => navigate('/records')}>
-          記録を見る
-          <IconChevronRight size={16} />
+        <h2 className="info-label">積み上げ</h2>
+        <ul className="info-list">
+          {list.map((h) => (
+            <li key={h.id}>
+              <span>{h.name}</span>
+              <span className="num">{formatTotal(habitTotal(h, state.records))}</span>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="link-btn info-link" onClick={() => navigate('/stack')}>
+          積み上げを見る
         </button>
       </section>
       <section className="info-block">
-        <h2 className="info-label">確認済みの累計時間</h2>
-        <p className="info-value num">{formatMinutes(total)}</p>
-        <p className="help">
-          {state.records.length === 0 ? `${formatJpDate(BASELINE.asOf)}時点の記録` : `${formatJpDate(BASELINE.asOf)}までの記録＋このアプリでの記録`}
-        </p>
+        <h2 className="info-label">この7日間でやった日</h2>
+        <ul className="info-list">
+          {list.map((h) => {
+            const f = weekFacts(state.records.filter((r) => r.habitId === h.id), h, today, state.meta.firstUsedOn);
+            return (
+              <li key={h.id}>
+                <span>{h.name}</span>
+                <span className="num">
+                  {f.studyDays}日{f.plannedDays > 0 ? `／予定${f.plannedDays}日` : ''}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       </section>
     </aside>
   );

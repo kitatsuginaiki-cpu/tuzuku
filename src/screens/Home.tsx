@@ -1,255 +1,389 @@
 import { useEffect, useState } from 'react';
-import { LIMITS } from '../lib/config';
-import { formatClock, formatShortDate, localDate } from '../lib/dates';
-import { homeMode, lastStudyDate } from '../lib/records';
-import { isPlannedDay, isReviewDue, looksVague, smallPlan } from '../lib/plan';
+import { BASELINE, RESUME_GAP_DAYS } from '../lib/config';
+import { dayDiff, formatClock, formatJpDate, formatShortDate } from '../lib/dates';
+import { isPlannedDay, isReviewDue, defaultSmall } from '../lib/plan';
 import { elapsedMs } from '../lib/session';
-import { useNow, useStore } from '../store';
-import { EditTextDialog, Logo, useFocusHeading } from '../components/common';
-import { IconChevronRight, IconClock, IconGear, IconPencil, IconPlay } from '../components/Icons';
+import { dayStatus, formatTotal, habitTotal, type DayStatus } from '../lib/accumulate';
+import { CHARACTER_NAME, lineFor, moodFor, MOOD_LABEL } from '../lib/character';
+import { HABIT_TEMPLATES, habitFromTemplate, isDone, MAX_HABITS, type CopingPlan, type Habit } from '../lib/model';
+import { todayOf, useNow, useStore } from '../store';
+import { Logo, useFocusHeading } from '../components/common';
+import { Dialog } from '../components/Dialog';
+import { CharacterFace } from '../components/Character';
+import { IconCheck, IconChevronRight, IconClock, IconGear, IconPencil, IconPlay } from '../components/Icons';
+import { editHabit } from './HabitEditor';
+
+const STATUS_LABEL: Record<Exclude<DayStatus, null>, string> = { done: 'やった', small: '小さな一手', rest: '休みの日' };
 
 export function Home({ navigate }: { navigate: (r: string) => void }) {
   const { state, actions } = useStore();
-  const { settings, records, active, meta } = state;
-  const today = localDate();
-  const mode = homeMode(records, settings, today);
-  const planMode = settings.supportMode === 'plan';
-  const resume = mode === 'resume';
-  const [editing, setEditing] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const { settings, records, active, meta, habits } = state;
+  const today = todayOf(settings);
+  const now = useNow(true);
   const h1 = useFocusHeading<HTMLHeadingElement>();
-  const now = useNow(!!active);
-  const next = settings.nextAction;
-  const small = smallPlan(settings);
-  const reviewDue = isReviewDue(settings, meta, records, today);
+  const list = habits.filter((h) => !h.archived).sort((a, b) => a.order - b.order);
+  const [coping, setCoping] = useState<Habit | null>(null);
 
-  // 「しおりを挟みました」の強調は一度だけ
   useEffect(() => {
-    if (!state.justBookmarked) return;
-    const t = window.setTimeout(actions.clearBookmarked, 2400);
+    if (!state.justBookmarked && !state.justMilestone) return;
+    const t = window.setTimeout(actions.clearFlash, 4000);
     return () => window.clearTimeout(t);
-  }, [state.justBookmarked, actions]);
+  }, [state.justBookmarked, state.justMilestone, actions]);
 
-  async function start(m: 'standard' | 'small') {
-    if (starting) return;
-    setStarting(true);
+  const hour = new Date(now - settings.dayStartHour * 3600_000).getHours();
+  const mood = moodFor({
+    habits: list,
+    records,
+    settings,
+    today,
+    hour,
+    firstUsedOn: meta.firstUsedOn,
+    sessionActive: !!active,
+    justMilestone: !!state.justMilestone,
+  });
+  const reviewDue = list.length > 0 && settings.supportMode === 'plan' && isReviewDue(settings, meta, records, today);
+
+  return (
+    <div className="screen home v7">
+      <header className="home-header mobile-only">
+        <Logo />
+        <button type="button" className="icon-btn" aria-label="設定を開く" onClick={() => navigate('/settings')}>
+          <IconGear size={22} />
+        </button>
+      </header>
+      <h1 id="home-h1" className="sr-only" ref={h1} tabIndex={-1}>
+        今日
+      </h1>
+      <p className="today-line">{formatShortDate(today)}</p>
+
+      {settings.characterEnabled && list.length > 0 && (
+        <section className={`buddy is-${mood.mood}`} aria-label={`${CHARACTER_NAME}のようす`}>
+          <CharacterFace mood={mood.mood} size={84} />
+          <div className="buddy-talk">
+            <p className="buddy-line">{lineFor(mood.mood, today)}</p>
+            <p className="buddy-fact">
+              <span className="sr-only">{MOOD_LABEL[mood.mood]}。</span>
+              {mood.doneToday
+                ? '今日の記録があります'
+                : mood.missed >= 2
+                  ? `予定の日に${mood.missed}日、記録がありません`
+                  : mood.plannedToday
+                    ? '今日は予定の日です'
+                    : '今日は予定のない日です'}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {active && (
+        <section className="active-row" aria-label="計測中">
+          <p className="active-note" role="status">
+            <span className={`dot${active.status === 'running' ? ' is-live' : ''}`} aria-hidden="true" />
+            {habits.find((h) => h.id === active.habitId)?.name ?? ''}
+            {active.status === 'running' ? ' 計測中' : active.status === 'paused' ? ' 一時停止中' : ' 終了の確認中'}
+            <span className="num">（{formatClock(elapsedMs(active, now))}）</span>
+          </p>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/session')}>
+            <IconPlay size={18} />
+            計測の画面へ
+          </button>
+        </section>
+      )}
+
+      {list.length === 0 ? (
+        <Onboarding navigate={navigate} />
+      ) : (
+        <>
+          <ul className="habit-list" aria-label="習慣">
+            {list.map((h) => (
+              <HabitCard key={h.id} habit={h} today={today} navigate={navigate} onCoping={() => setCoping(h)} />
+            ))}
+          </ul>
+          {list.length < MAX_HABITS && (
+            <button type="button" className="btn btn-ghost add-habit" onClick={() => { editHabit(null); navigate('/habit'); }}>
+              ＋ 習慣を追加
+            </button>
+          )}
+        </>
+      )}
+
+      {reviewDue && <ReviewRow navigate={navigate} />}
+      <CopingDialog habit={coping} today={today} onClose={() => setCoping(null)} navigate={navigate} />
+    </div>
+  );
+}
+
+function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; today: string; navigate: (r: string) => void; onCoping: () => void }) {
+  const { state, actions } = useStore();
+  const [busy, setBusy] = useState(false);
+  const st = dayStatus(h.id, state.records, today);
+  const planned = isPlannedDay(h, today);
+  const total = habitTotal(h, state.records);
+  const mine = state.records.filter((r) => r.habitId === h.id && isDone(r));
+  const last = mine.reduce<string | null>((m, r) => (!m || r.studyDate > m ? r.studyDate : m), null);
+  const resume = !st && !!last && dayDiff(last, today) >= RESUME_GAP_DAYS;
+  const flash = state.justBookmarked === h.id || state.justMilestone?.habitId === h.id;
+  const isActive = state.active?.habitId === h.id;
+  const todayRec = state.records.find((r) => r.habitId === h.id && r.studyDate === today);
+
+  async function run(fn: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
     try {
-      await actions.startSession(m);
+      await fn();
+    } catch (e) {
+      console.error(e);
+      actions.toast('保存できませんでした。もう一度お試しください。', { tone: 'error' });
     } finally {
-      setStarting(false);
+      setBusy(false);
     }
   }
 
-  const header = (
-    <header className="home-header mobile-only">
-      <Logo />
-      <button type="button" className="icon-btn" aria-label="設定を開く" onClick={() => navigate('/settings')}>
-        <IconGear size={22} />
-      </button>
-    </header>
-  );
-
-  const bookmark = (
-    <button type="button" className={`next-body${state.justBookmarked ? ' is-new' : ''}`} onClick={() => setEditing(true)}>
-      {settings.subject && <span className="subject">{settings.subject}</span>}
-      <span className={`next-title${next ? '' : ' is-empty'}`}>{next || '次の一手は未設定'}</span>
-      <span className="next-caption">
-        <span>{next ? (state.justBookmarked ? 'しおりを挟みました' : resume ? '前回残したしおり' : 'しおり（前回残した一手）') : '学習を始めてからでも決められます'}</span>
-        <span className="next-edit">
-          <IconPencil size={14} />
-          {next ? '変更' : '次の一手を決める'}
-        </span>
-      </span>
-    </button>
-  );
-
-  const editDialog = (
-    <EditTextDialog
-      open={editing}
-      onClose={() => setEditing(false)}
-      title="次の一手を決める"
-      label="しおり（次の一手）"
-      initial={settings.nextAction}
-      maxLength={LIMITS.nextAction}
-      placeholder="例：第11章の仕訳問題を3問解く"
-      help="すぐ手をつけられる行動を1つ。数や範囲を入れると始めやすくなります。"
-      tooLongMessage={`次の一手は${LIMITS.nextAction}文字以内で入力してください。`}
-      hint={(v) => (looksVague(v) ? '「何を・どこまで」を足すと始めやすくなります（例：第11章の問題を3問）。' : '')}
-      onSave={(v) => actions.updateSettings({ nextAction: v })}
-    />
-  );
-
-  /* ---------------- 学習中 ---------------- */
-  if (active) {
-    return (
-      <div className="screen home">
-        {header}
-        <section className="hero" aria-labelledby="home-h1">
-          <p className="eyebrow">学習中</p>
-          <h1 id="home-h1" className="h1" ref={h1} tabIndex={-1}>
-            {active.title || '学習中'}
-          </h1>
-        </section>
-        <section className="cta">
-          <p className="active-note" role="status">
-            <span className={`dot${active.status === 'running' ? ' is-live' : ''}`} aria-hidden="true" />
-            {active.status === 'running' ? '計測中' : active.status === 'paused' ? '一時停止中' : '終了の確認中'}
-            <span className="num">（{formatClock(elapsedMs(active, now))} 経過）</span>
-          </p>
-          <button type="button" className="btn btn-primary btn-xl" onClick={() => navigate('/session')}>
-            <IconPlay size={20} />
-            学習中の画面に戻る
-          </button>
-        </section>
-      </div>
-    );
-  }
-
-  /* ---------------- 記録中心（シンプル表示） ---------------- */
-  if (!planMode) {
-    return (
-      <div className="screen home is-simple">
-        {header}
-        <section className="hero" aria-labelledby="home-h1">
-          <p className="eyebrow">{resume ? '前回の続きから' : '今日の学習'}</p>
-          <h1 id="home-h1" className="h1" ref={h1} tabIndex={-1}>
-            {resume ? 'また、ここから。' : '次の一歩から。'}
-          </h1>
-        </section>
-        <section className="next simple-next" aria-label="次にやること">
-          {bookmark}
-        </section>
-        <section className="cta" aria-label="学習の開始">
-          <button type="button" className="btn btn-primary btn-xl" onClick={() => start('standard')} disabled={starting}>
-            <IconPlay size={20} />
-            学習を始める
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => start('small')} disabled={starting}>
-            <IconClock size={19} />
-            2分だけ始める
-          </button>
-        </section>
-        {editDialog}
-      </div>
-    );
-  }
-
-  /* ---------------- 数日ぶり（プラン表示） ---------------- */
-  if (resume) {
-    const last = lastStudyDate(records);
-    return (
-      <div className="screen home is-resume">
-        {header}
-        <section className="hero" aria-labelledby="home-h1">
-          <p className="eyebrow">前回の続きから</p>
-          <h1 id="home-h1" className="h1" ref={h1} tabIndex={-1}>
-            また、ここから。
-          </h1>
-          <p className="lead">{next ? 'しおりは残っています。どれから始めますか？' : 'どれから始めますか？'}</p>
-          {last && <p className="fact">最後の学習：{formatShortDate(last)}</p>}
-        </section>
-        <ul className="choices" aria-label="再開のしかた">
-          <li>
-            <button type="button" className="choice is-main" onClick={() => start('standard')} disabled={starting}>
-              <span className="choice-main">
-                <span className="choice-name">{next ? 'しおりから始める' : '学習を始める'}</span>
-                <span className="choice-desc">{next || '内容は終わったときに残せます'}</span>
-              </span>
-              <IconPlay size={18} />
-            </button>
-          </li>
-          <li>
-            <button type="button" className="choice" onClick={() => start('small')} disabled={starting}>
-              <span className="choice-main">
-                <span className="choice-name">小さな一手で始める</span>
-                <span className="choice-desc">
-                  {small.label}（{small.minutes}分）
-                </span>
-              </span>
-              <IconClock size={18} />
-            </button>
-          </li>
-          <li>
-            <button type="button" className="choice" onClick={() => navigate('/plan')}>
-              <span className="choice-main">
-                <span className="choice-name">プランを1つ変える</span>
-                <span className="choice-desc">きっかけ・一手の大きさ・曜日</span>
-              </span>
-              <IconChevronRight size={18} />
-            </button>
-          </li>
-        </ul>
-        {reviewDue && <ReviewRow navigate={navigate} />}
-        {editDialog}
-      </div>
-    );
-  }
-
-  /* ---------------- 通常・初回（プラン表示） ---------------- */
-  const planned = isPlannedDay(settings, today);
+  const statusText = st ? STATUS_LABEL[st] : planned ? '予定の日' : '予定外の日';
+  const showCue = state.settings.supportMode === 'plan' && !!h.cue;
+  const headingId = `hc-${h.id}`;
   return (
-    <div className="screen home is-plan">
-      {header}
-      <h1 id="home-h1" className="sr-only" ref={h1} tabIndex={-1}>
-        今日の一手
-      </h1>
-      <p className="today-line">
-        {formatShortDate(today)}
-        <span aria-hidden="true"> ・ </span>
-        {planned ? '予定の日' : '予定外の日'}
+    <li className={`habit-card c-${h.color}${st ? ` is-${st}` : ''}${flash ? ' is-new' : ''}`} aria-labelledby={headingId}>
+      <div className="hc-head">
+        <h2 id={headingId} className="hc-name">
+          {h.name}
+        </h2>
+        <span className={`hc-status${st ? ' is-on' : ''}`}>
+          {st && st !== 'rest' && <IconCheck size={14} />}
+          {statusText}
+        </span>
+      </div>
+      <p className="hc-total">
+        <span className="hc-total-label">積み上げ</span>
+        <span className="num">{formatTotal(total)}</span>
+        {h.trackingType === 'time' && h.baseline && <span className="hc-sub">（{formatJpDate(BASELINE.asOf)}までの確認済みを含む）</span>}
       </p>
-
-      <ol className="thread" aria-label="今日のプラン">
-        <li className="thread-item is-cue">
-          <span className="thread-key">もし</span>
-          {settings.cue ? (
-            <button type="button" className="thread-cue" onClick={() => navigate('/plan')}>
-              {settings.cue}
+      {resume && <p className="hc-resume">また、ここから。{h.nextAction ? 'しおりは残っています。' : ''}</p>}
+      {(showCue || h.nextAction) && (
+        <dl className="hc-plan">
+          {showCue && (
+            <div>
+              <dt>もし</dt>
+              <dd>{h.cue}</dd>
+            </div>
+          )}
+          {h.nextAction && (
+            <div>
+              <dt>しおり</dt>
+              <dd className={flash && state.justBookmarked === h.id ? 'is-new' : ''}>{h.nextAction}</dd>
+            </div>
+          )}
+        </dl>
+      )}
+      <div className="hc-actions">
+        {h.trackingType === 'time' ? (
+          isActive ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/session')}>
+              <IconPlay size={18} />
+              計測中の画面へ
             </button>
           ) : (
-            <button type="button" className="thread-cue is-empty" onClick={() => navigate('/plan')}>
-              きっかけを決める
-              <span className="thread-hint">（例：昼食後にコーヒーを淹れたら）</span>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={busy || !!state.active}
+              onClick={() => run(() => actions.startSession(h.id, { kind: 'standard' }))}
+            >
+              <IconPlay size={18} />
+              {h.nextAction ? 'しおりから始める' : '始める'}
             </button>
-          )}
-        </li>
-        <li className="thread-item is-act">
-          <span className="thread-key">この一手</span>
-          {bookmark}
-        </li>
-      </ol>
-
-      <section className="cta" aria-label="学習の開始">
-        <button type="button" className="btn btn-primary btn-xl" onClick={() => start('standard')} disabled={starting}>
-          <IconPlay size={20} />
-          {next ? 'この一手を始める' : '学習を始める'}
+          )
+        ) : st === 'done' || st === 'small' ? (
+          <p className="hc-done">
+            <IconCheck size={18} />
+            今日はやった
+            {todayRec && (
+              <button type="button" className="link-btn" onClick={() => run(() => actions.deleteRecord(todayRec.id, { quiet: true }))}>
+                取り消す
+              </button>
+            )}
+          </p>
+        ) : (
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => run(() => actions.markDone(h.id))}>
+            <IconCheck size={18} />
+            やった
+          </button>
+        )}
+        {!(h.trackingType === 'days' && (st === 'done' || st === 'small')) && !isActive && (
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onCoping} disabled={busy || (h.trackingType === 'time' && !!state.active)}>
+            <IconClock size={17} />
+            できない日は
+          </button>
+        )}
+        <button
+          type="button"
+          className="icon-btn hc-edit"
+          aria-label={`${h.name}を編集`}
+          onClick={() => {
+            editHabit(h.id);
+            navigate('/habit');
+          }}
+        >
+          <IconPencil size={18} />
         </button>
-        <p className="sr-only">
-          目標時間は{settings.targetMinutes}分です。時間になっても自動では終了しません。
-        </p>
-      </section>
+      </div>
+    </li>
+  );
+}
 
-      <section className="small-row" aria-label="できない日の小さな一手">
-        <div className="small-text">
-          <span className="small-when">{settings.smallWhen || '時間がない・気が重い'}なら</span>
-          <span className="small-what">
-            {small.label}
-            {small.custom && <span className="small-min">（{small.minutes}分）</span>}
+/** できない日の組：こんな日は → 代わりにやること。休むと決める日も選べる */
+function CopingDialog({ habit, today, onClose, navigate }: { habit: Habit | null; today: string; onClose: () => void; navigate: (r: string) => void }) {
+  const { state, actions } = useStore();
+  const [busy, setBusy] = useState(false);
+  const h = habit;
+  const plans: CopingPlan[] = h
+    ? h.copingPlans.length
+      ? h.copingPlans
+      : [{ when: '時間がない・気が重い', instead: defaultSmall(h).label, minutes: h.trackingType === 'time' ? defaultSmall(h).minutes : null }]
+    : [];
+  const hasToday = !!h && state.records.some((r) => r.habitId === h.id && r.studyDate === today);
+
+  async function pick(c: CopingPlan) {
+    if (!h || busy) return;
+    setBusy(true);
+    try {
+      if (h.trackingType === 'time') await actions.startSession(h.id, { kind: 'small', coping: c });
+      else await actions.markDone(h.id, { small: c });
+      onClose();
+    } catch (e) {
+      console.error(e);
+      actions.toast('保存できませんでした。もう一度お試しください。', { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rest() {
+    if (!h || busy) return;
+    setBusy(true);
+    try {
+      await actions.markRest(h.id);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!h} onClose={onClose} title={h ? `${h.name}：できない日は` : ''} busy={busy} description="今日の状態に近いものを選んでください。">
+      <ul className="coping-list">
+        {plans.map((c, i) => (
+          <li key={i}>
+            <button type="button" className="choice" onClick={() => pick(c)} disabled={busy}>
+              <span className="choice-main">
+                <span className="choice-name">{c.when || 'こんな日'}なら</span>
+                <span className="choice-desc">
+                  {c.instead}
+                  {h?.trackingType === 'time' && c.minutes ? `（${c.minutes}分）` : ''}
+                </span>
+              </span>
+              {h?.trackingType === 'time' ? <IconPlay size={18} /> : <IconCheck size={18} />}
+            </button>
+          </li>
+        ))}
+        <li>
+          <button type="button" className="choice is-rest" onClick={rest} disabled={busy || hasToday}>
+            <span className="choice-main">
+              <span className="choice-name">今日は休むと決める</span>
+              <span className="choice-desc">{hasToday ? '今日はすでに記録があります' : '積み上げは減りません。途切れとして数えません。'}</span>
+            </span>
+            <IconChevronRight size={18} />
+          </button>
+        </li>
+      </ul>
+      <div className="dialog-actions">
+        {h && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              editHabit(h.id);
+              onClose();
+              navigate('/habit');
+            }}
+          >
+            組を編集する
+          </button>
+        )}
+        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+          閉じる
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** はじめて：一緒に考えた5つの案から選ぶ（自動では作らない） */
+function Onboarding({ navigate }: { navigate: (r: string) => void }) {
+  const { actions } = useStore();
+  const [picked, setPicked] = useState<string[]>([]);
+  const [useBaseline, setUseBaseline] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function create() {
+    if (!picked.length || busy) return;
+    setBusy(true);
+    try {
+      const list = HABIT_TEMPLATES.filter((t) => picked.includes(t.key)).map((t, i) => habitFromTemplate(t, i, useBaseline));
+      await actions.addHabits(list);
+      actions.toast(`${list.length}つの習慣を用意しました。きっかけやしおりは✎から変えられます。`);
+    } catch {
+      actions.toast('保存できませんでした。もう一度お試しください。', { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="onboarding" aria-labelledby="ob-title">
+      <h2 id="ob-title" className="h2">
+        何をつづけますか？
+      </h2>
+      <p className="lead">選んだものだけ作ります。あとで名前・きっかけ・できない日の組を変えられます。</p>
+      <fieldset className="ob-list">
+        <legend className="sr-only">習慣の案</legend>
+        {HABIT_TEMPLATES.map((t) => {
+          const on = picked.includes(t.key);
+          return (
+            <label key={t.key} className={`ob-item${on ? ' is-on' : ''}`}>
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => setPicked(on ? picked.filter((k) => k !== t.key) : [...picked, t.key])}
+              />
+              <span className="ob-main">
+                <span className="ob-name">
+                  {t.name}
+                  <span className="badge">{t.trackingType === 'time' ? '時間で記録' : '日数で記録'}</span>
+                </span>
+                <span className="ob-desc">もし：{t.cue}</span>
+              </span>
+            </label>
+          );
+        })}
+      </fieldset>
+      {picked.includes('boki') && (
+        <label className="check-row">
+          <input type="checkbox" checked={useBaseline} onChange={(e) => setUseBaseline(e.target.checked)} />
+          <span>
+            簿記に、確認済みの累計 17時間36分（{formatJpDate(BASELINE.asOf)}時点）を土台として含める
           </span>
-          {!small.custom && (
-            <button type="button" className="link-btn small-set" onClick={() => navigate('/plan')}>
-              自分の小さな一手を決める
-            </button>
-          )}
-        </div>
-        <button type="button" className="btn btn-secondary btn-small" onClick={() => start('small')} disabled={starting}>
-          {small.custom ? '小さく始める' : `${small.minutes}分だけ始める`}
+        </label>
+      )}
+      <div className="ob-actions">
+        <button type="button" className="btn btn-primary" onClick={create} disabled={!picked.length || busy} aria-busy={busy}>
+          {picked.length ? `${picked.length}つの習慣ではじめる` : '習慣を選んでください'}
         </button>
-      </section>
-
-      {reviewDue && <ReviewRow navigate={navigate} />}
-      {editDialog}
-    </div>
+        <button type="button" className="btn btn-ghost" onClick={() => { editHabit(null); navigate('/habit'); }}>
+          自分で作る
+        </button>
+      </div>
+    </section>
   );
 }
 

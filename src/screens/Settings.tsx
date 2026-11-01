@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { LIMITS } from '../lib/config';
 import { formatJpDate, formatMinutes, formatShortDate, localDate } from '../lib/dates';
-import { buildBackup, ImportError, parseImportText, parseLegacyV3, type LegacyCandidates } from '../lib/backup';
-import { DEFAULT_SETTINGS, totalMinutes, type Settings as SettingsT, type StudyRecord } from '../lib/records';
+import { buildBackup, ImportError, parseImportText, parseLegacyV3, type LegacyCandidates, type ParsedBackup } from '../lib/backup';
 import { readLegacyV3 } from '../lib/storage';
-import type { Review } from '../lib/plan';
-import { useStore } from '../store';
+import { DEFAULT_APP_SETTINGS, type Strictness } from '../lib/model';
+import { MOOD_LABEL, type Mood } from '../lib/character';
+import { CharacterFace } from '../components/Character';
+import { todayOf, useStore } from '../store';
 import { Dialog } from '../components/Dialog';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
 import { IconDownload, IconUpload } from '../components/Icons';
@@ -13,7 +14,7 @@ import { IconDownload, IconUpload } from '../components/Icons';
 export function Settings({ navigate }: { navigate: (r: string) => void }) {
   const { state, actions } = useStore();
   const h1 = useFocusHeading<HTMLHeadingElement>();
-  const [restore, setRestore] = useState<{ settings: SettingsT; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null } | null>(null);
+  const [restore, setRestore] = useState<ParsedBackup | null>(null);
   const [legacy, setLegacy] = useState<LegacyCandidates | null>(null);
   const [legacyFound, setLegacyFound] = useState<Record<string, unknown> | null>(null);
   const [resetStep, setResetStep] = useState<0 | 1>(0);
@@ -59,7 +60,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
   }, []);
 
   function exportJson() {
-    const data = buildBackup(state.settings, state.records, state.reviews);
+    const data = buildBackup(state.habits, state.settings, state.records, state.reviews);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -75,7 +76,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
   /** 読み込んだ文字列を解析し、確認ダイアログへ。成功なら true */
   function openImport(text: string): boolean {
     try {
-      const parsed = parseImportText(text, localDate());
+      const parsed = parseImportText(text, todayOf(state.settings));
       if (parsed.kind === 'backup') setRestore(parsed);
       else setLegacy(parsed.legacy);
       return true;
@@ -96,7 +97,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
 
   /** ダウンロードできない環境（埋め込み表示など）向け：バックアップをクリップボードへ */
   function copyJson() {
-    const text = JSON.stringify(buildBackup(state.settings, state.records, state.reviews));
+    const text = JSON.stringify(buildBackup(state.habits, state.settings, state.records, state.reviews));
     const fallback = () => setCopyText(text);
     try {
       navigator.clipboard
@@ -122,12 +123,12 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
 
       <section className="settings-block" aria-labelledby="s-support">
         <h2 id="s-support" className="section-title">支援の表示</h2>
-        <p className="help">きっかけ・小さな一手・週の見直しは「プラン」画面で決めます。</p>
+        <p className="help">きっかけ・しおり・できない日の組は、習慣ごとに今日の画面の ✎ から決めます。</p>
         <div className="radio-list" role="radiogroup" aria-labelledby="s-support">
           {(
             [
-              ['plan', 'プラン表示（おすすめ）', 'きっかけ→一手、できない日の小さな一手、再開と週の見直しを表示します。'],
-              ['simple', '記録中心', '次にやること・開始・記録だけの簡素な表示にします。2つの使い方を比べたいときに。'],
+              ['plan', 'プラン表示（おすすめ）', '習慣ごとのきっかけ（もし〜したら）と、週の見直しを表示します。'],
+              ['simple', '記録中心', 'しおり・開始・記録だけの簡素な表示にします。2つの使い方を比べたいときに。'],
             ] as const
           ).map(([v, l, d]) => (
             <label key={v} className={`radio${support === v ? ' is-on' : ''}`}>
@@ -143,8 +144,11 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
           <input type="checkbox" checked={weekly} onChange={(e) => changeWeekly(e.target.checked)} />
           <span>週に1度、見直しをホームで提案する（任意・1分）</span>
         </label>
-        <button type="button" className="btn btn-outline settings-plan" onClick={() => navigate('/plan')}>プランを開く</button>
       </section>
+
+      <CharacterSettings />
+
+      <DaySettings />
 
       <section className="settings-block" aria-labelledby="s-data">
         <h2 id="s-data" className="section-title">データ</h2>
@@ -152,7 +156,10 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
           {v === 'indexeddb' && 'この端末のブラウザ内（IndexedDB）に保存しています。'}
           {v === 'localStorage' && 'この端末のブラウザ内（localStorage）に保存しています。'}
           {v === 'memory' && 'このブラウザでは保存領域を使えません。画面を閉じると記録は消えます。プライベートブラウズを解除するか、別のブラウザでお使いください。'}
-          {v !== 'memory' && ' PCとスマホのデータは自動では同期されません。ブラウザのデータ削除で消えることがあるため、ときどきバックアップを書き出してください。'}
+          {v !== 'memory' &&
+            (state.account
+              ? ' ログイン中のため、PCとスマホのあいだで自動で同期しています。'
+              : ' ログインしない限り、PCとスマホのデータは同期されません（「仲間」タブからログインできます）。ブラウザのデータ削除で消えることがあるため、ときどきバックアップを書き出してください。')}
         </p>
         <div className="btn-row">
           <button type="button" className="btn btn-outline" onClick={exportJson}>
@@ -171,6 +178,26 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
         </div>
         <p className="help">ファイルを保存できない環境では「コピー」と「貼り付けて復元」を使えます（例：PCでコピー → 自分宛てのメモで送る → スマホで貼り付け）。以前の試作版（v3.1）のバックアップにも対応しています。</p>
 
+        {state.v6Backup && (
+          <div className="legacy-box">
+            <p className="dialog-text">v6 から自動で移行しました。移行前のデータ（記録{state.v6Backup.records.length}件）も書き出せます。</p>
+            <button type="button" className="btn btn-outline" onClick={() => {
+              const blob = new Blob([JSON.stringify({ format: 'tsuzuku-v6-premigration', exportedAt: new Date().toISOString(), ...state.v6Backup }, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `tsuzuku-v6-before-migration-${localDate()}.json`;
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 5000);
+            }}>
+              <IconDownload size={18} />
+              移行前のデータを書き出す
+            </button>
+          </div>
+        )}
+
         {legacyFound && (
           <div className="legacy-box">
             <p className="dialog-text">このブラウザに以前の試作版（v3.1）のデータが見つかりました。自動では取り込みません。</p>
@@ -187,7 +214,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
         <h2 id="s-about" className="section-title">このアプリについて</h2>
         <ul className="about-list">
           <li>確認済みの累計：{formatJpDate('2026-10-07')}時点で17時間36分（1,056分）。この期間の個別の記録はありません。</li>
-          <li>ログイン・広告・解析ツールはありません。データは外部に送信しません。</li>
+          <li>広告・解析ツールはありません。ログインは任意で、仲間と同期を使うときだけ必要です。</li>
           <li>ホーム画面に追加すると、オフラインでも起動できます。</li>
         </ul>
         {installEvt && (
@@ -199,7 +226,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
 
       <section className="settings-block danger-zone" aria-labelledby="s-reset">
         <h2 id="s-reset" className="section-title">記録の消去</h2>
-        <p className="help">このアプリで追加した記録と設定をすべて消去します。確認済みの累計17時間36分は残ります。</p>
+        <p className="help">この端末の習慣・記録・設定をすべて消去します。{state.account ? 'ログイン中のため、同期先の記録も消えます。' : ''}確認済みの累計17時間36分は、簿記の習慣を作り直すと再び土台になります。</p>
         <button type="button" className="btn btn-danger-ghost" onClick={() => setResetStep(1)} disabled={!!state.active}>
           記録と設定を消去…
         </button>
@@ -233,12 +260,12 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
       <LegacyDialog data={legacy} onClose={() => setLegacy(null)} />
 
       <Dialog open={resetStep === 1} onClose={() => setResetStep(0)} title="記録と設定を消去しますか？" role="alertdialog"
-        description={`このアプリでの記録${state.records.length}件（${formatMinutes(state.records.reduce((s, r) => s + r.minutes, 0))}）と設定を消去します。バックアップがないと元に戻せません。`}>
+        description={`習慣${state.habits.length}件・記録${state.records.length}件（${formatMinutes(state.records.reduce((s, r) => s + r.minutes, 0))}）と設定を消去します。バックアップがないと元に戻せません。`}>
         <div className="dialog-actions stacked">
           <button type="button" className="btn btn-outline" onClick={exportJson} data-autofocus>先にバックアップを書き出す</button>
           <button type="button" className="btn btn-danger" onClick={async () => {
             try {
-              await actions.replaceAll({ ...DEFAULT_SETTINGS }, []);
+              await actions.replaceAll({ habits: [], settings: { ...DEFAULT_APP_SETTINGS }, records: [], reviews: [] });
               setResetStep(0);
               actions.toast('記録と設定を消去しました。');
               navigate('/');
@@ -253,23 +280,23 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
   );
 }
 
-function RestoreDialog({ data, onClose, onExport }: { data: { settings: SettingsT; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null } | null; onClose: () => void; onExport: () => void }) {
+function RestoreDialog({ data, onClose, onExport }: { data: ParsedBackup | null; onClose: () => void; onExport: () => void }) {
   const { state, actions } = useStore();
   const [busy, setBusy] = useState(false);
   if (!data) return <Dialog open={false} onClose={onClose} title="">{null}</Dialog>;
   return (
     <Dialog open onClose={onClose} title="バックアップから復元しますか？" role="alertdialog" busy={busy}
       description={<>
-        <p>ファイル：記録{data.records.length}件・累計 {formatMinutes(totalMinutes(data.records))}{data.exportedAt ? `（${formatShortDate(localDate(new Date(data.exportedAt)))}に書き出し）` : ''}</p>
-        <p>現在：記録{state.records.length}件・累計 {formatMinutes(totalMinutes(state.records))}</p>
-        <p>現在の記録と設定は、ファイルの内容に置き換わります。</p>
+        <p>ファイル：習慣{data.habits.length}件・記録{data.records.length}件{data.exportedAt ? `（${formatShortDate(localDate(new Date(data.exportedAt)))}に書き出し）` : ''}</p>
+        <p>現在：習慣{state.habits.length}件・記録{state.records.length}件</p>
+        <p>現在の習慣・記録・設定は、ファイルの内容に置き換わります。</p>
       </>}>
       <div className="dialog-actions stacked">
         <button type="button" className="btn btn-outline" onClick={onExport} disabled={busy} data-autofocus>先に現在のデータを書き出す</button>
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
           setBusy(true);
           try {
-            await actions.replaceAll(data.settings, data.records, data.reviews);
+            await actions.replaceAll({ habits: data.habits, settings: data.settings, records: data.records, reviews: data.reviews });
             onClose();
             actions.toast(`復元しました（記録${data.records.length}件）。`);
           } catch {
@@ -294,6 +321,7 @@ function LegacyDialog({ data, onClose }: { data: LegacyCandidates | null; onClos
   }, [data]);
   if (!data) return <Dialog open={false} onClose={onClose} title="">{null}</Dialog>;
   const chosen = data.candidates.filter((c) => !c.blocked && sel.has(c.record.id));
+  const target = state.habits.find((h) => h.baseline) ?? state.habits.find((h) => h.trackingType === 'time' && !h.archived);
   const hasSettings = !!(data.nextAction || data.cue);
   return (
     <Dialog open onClose={onClose} title="試作版（v3.1）から取り込む" busy={busy}
@@ -317,6 +345,7 @@ function LegacyDialog({ data, onClose }: { data: LegacyCandidates | null; onClos
           ))}
         </ul>
       )}
+      {!target && <p className="save-error" role="alert">取り込み先の「時間で記録」の習慣がありません。先に簿記の習慣を作ってください。</p>}
       {hasSettings && (
         <label className="check-row">
           <input type="checkbox" checked={takeSettings} onChange={(e) => setTakeSettings(e.target.checked)} />
@@ -326,15 +355,14 @@ function LegacyDialog({ data, onClose }: { data: LegacyCandidates | null; onClos
       <FieldError id="legacy-err">{null}</FieldError>
       <div className="dialog-actions">
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>やめる</button>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy || (chosen.length === 0 && !(takeSettings && hasSettings))} onClick={async () => {
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy || !target || (chosen.length === 0 && !(takeSettings && hasSettings))} onClick={async () => {
+          if (!target) return;
           setBusy(true);
           try {
-            const s = { ...state.settings };
-            if (takeSettings) {
-              if (!s.nextAction && data.nextAction) s.nextAction = data.nextAction;
-              if (!s.cue && data.cue) s.cue = data.cue;
-            }
-            const n = await actions.addRecords(chosen.map((c) => c.record), s);
+            const n = await actions.addRecords(
+              chosen.map((c) => ({ ...c.record, habitId: target.id, kind: 'done' as const })),
+              takeSettings ? { habitId: target.id, nextAction: data.nextAction, cue: data.cue } : undefined,
+            );
             onClose();
             actions.toast(`${n}件の記録を取り込みました。`);
           } catch {
@@ -345,6 +373,126 @@ function LegacyDialog({ data, onClose }: { data: LegacyCandidates | null; onClos
         }}>{busy ? '取り込み中…' : `${chosen.length}件を取り込む`}</button>
       </div>
     </Dialog>
+  );
+}
+
+const STRICT: [Strictness, string, string][] = [
+  ['gentle', 'やさしい', '心配・怒った顔は出しません。間があいても「待っている」まで。'],
+  ['normal', 'ふつう（おすすめ）', '予定の日に2日あくと心配そうにします。怒りません。'],
+  ['strict', 'きびしい', '予定の日に3日あくと怒ります。再開すればすぐに嬉しそうな顔に戻ります。'],
+];
+const MOODS: Mood[] = ['happy', 'normal', 'waiting', 'worried', 'angry'];
+
+function CharacterSettings() {
+  const { state, actions } = useStore();
+  const [on, setOn] = useState(state.settings.characterEnabled);
+  const [strict, setStrict] = useState(state.settings.strictness);
+  useEffect(() => {
+    setOn(state.settings.characterEnabled);
+    setStrict(state.settings.strictness);
+  }, [state.settings.characterEnabled, state.settings.strictness]);
+  const fail = () => actions.toast('保存できませんでした。', { tone: 'error' });
+  return (
+    <section className="settings-block" aria-labelledby="s-chara">
+      <h2 id="s-chara" className="section-title">キャラクター「つづ」</h2>
+      <label className="check-row">
+        <input type="checkbox" role="switch" checked={on} onChange={(e) => {
+          const v = e.target.checked;
+          setOn(v);
+          actions.updateSettings({ characterEnabled: v }).catch(() => { setOn(!v); fail(); });
+        }} />
+        <span>今日の画面にキャラクターを表示する</span>
+      </label>
+      <p className="help">表情は実際の記録だけで決まります（予定の曜日・やった日・休むと決めた日）。予定のない日と休むと決めた日は、途切れに数えません。</p>
+      <ul className="mood-gallery" aria-label="表情の一覧">
+        {MOODS.map((m) => (
+          <li key={m}>
+            <CharacterFace mood={m} size={56} decorative />
+            <span>{MOOD_LABEL[m]}</span>
+          </li>
+        ))}
+      </ul>
+      <fieldset disabled={!on}>
+        <legend className="field-label">厳しさ</legend>
+        <div className="radio-list" role="radiogroup" aria-label="厳しさ">
+          {STRICT.map(([v, l, d]) => (
+            <label key={v} className={`radio${strict === v ? ' is-on' : ''}`}>
+              <input type="radio" name="strictness" value={v} checked={strict === v} onChange={() => {
+                const prev = strict;
+                setStrict(v);
+                actions.updateSettings({ strictness: v }).catch(() => { setStrict(prev); fail(); });
+              }} />
+              <span>
+                <span className="radio-label">{l}</span>
+                <span className="help">{d}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </section>
+  );
+}
+
+function parseList(s: string): number[] | null {
+  const xs = s.split(/[,、\s]+/).filter(Boolean).map(Number);
+  if (!xs.length || xs.length > 12 || xs.some((x) => !Number.isInteger(x) || x < 1 || x > 10000)) return null;
+  return [...new Set(xs)].sort((a, b) => a - b);
+}
+
+function DaySettings() {
+  const { state, actions } = useStore();
+  const [hour, setHour] = useState(state.settings.dayStartHour);
+  const [mt, setMt] = useState(state.settings.milestonesTime.join(', '));
+  const [md, setMd] = useState(state.settings.milestonesDays.join(', '));
+  const [err, setErr] = useState<{ mt?: string; md?: string }>({});
+  useEffect(() => setHour(state.settings.dayStartHour), [state.settings.dayStartHour]);
+  async function saveMilestones(e: React.FormEvent) {
+    e.preventDefault();
+    const t = parseList(mt);
+    const d = parseList(md);
+    const errs = { mt: t ? undefined : '1〜10000の整数をカンマ区切りで入力してください。', md: d ? undefined : '1〜10000の整数をカンマ区切りで入力してください。' };
+    setErr(errs);
+    if (!t || !d) return;
+    try {
+      await actions.updateSettings({ milestonesTime: t, milestonesDays: d });
+      setMt(t.join(', '));
+      setMd(d.join(', '));
+      actions.toast('節目を保存しました。');
+    } catch {
+      actions.toast('保存できませんでした。', { tone: 'error' });
+    }
+  }
+  return (
+    <section className="settings-block" aria-labelledby="s-day">
+      <h2 id="s-day" className="section-title">1日の区切りと節目</h2>
+      <label className="field-label" htmlFor="s-hour">1日の区切り</label>
+      <select id="s-hour" className="input select" value={hour} onChange={(e) => {
+        const v = Number(e.target.value);
+        setHour(v);
+        actions.updateSettings({ dayStartHour: v }).catch(() => actions.toast('保存できませんでした。', { tone: 'error' }));
+      }} aria-describedby="s-hour-help">
+        {[0, 1, 2, 3, 4].map((h) => (
+          <option key={h} value={h}>{h === 0 ? '0時（ふつう）' : `${h}時（${h}時までは前の日）`}</option>
+        ))}
+      </select>
+      <p id="s-hour-help" className="help">夜ふかしの日も、寝る前の記録を「その日」として数えたいときに。</p>
+      <form onSubmit={saveMilestones} noValidate className="spaced">
+        <div className="field-row">
+          <div className="field">
+            <label className="field-label" htmlFor="s-mt">時間で記録する習慣の節目（時間）</label>
+            <input id="s-mt" className="input" value={mt} onChange={(e) => setMt(e.target.value)} inputMode="numeric" aria-invalid={!!err.mt} aria-describedby="s-mt-err" />
+            <FieldError id="s-mt-err">{err.mt}</FieldError>
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor="s-md">日数で記録する習慣の節目（日）</label>
+            <input id="s-md" className="input" value={md} onChange={(e) => setMd(e.target.value)} inputMode="numeric" aria-invalid={!!err.md} aria-describedby="s-md-err" />
+            <FieldError id="s-md-err">{err.md}</FieldError>
+          </div>
+        </div>
+        <button type="submit" className="btn btn-outline btn-sm">節目を保存</button>
+      </form>
+    </section>
   );
 }
 

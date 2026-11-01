@@ -1,110 +1,141 @@
-# つづく。（v6）
+# つづく。（v7）
 
-止まっても、また始められる。— 学習を **始める・続ける・再開する** ための日本語PWA。
+止まっても、また始められる。習慣を **始める・続ける・再開する** ための日本語の PWA です。スマートフォンでも PC でも動きます。
 
-**迷わず始めて、しおりを挟んで終わる。** 自分で決めた「もし〔きっかけ〕なら → 〔この一手〕」がホームにそのまま表示され、1タップで始められます。できない日は事前に決めた小さな一手で、途切れた後は責めずに戻れる画面に変わります。
-スマートフォン・PC の両方で動作し、ログイン不要・データは端末内にだけ保存します。
+v7 で次の4つが加わりました。
 
-![主要画面](docs/redesign/final-ui-mobile.png)
+1. **積み上げが目に見える。** 時間で記録する習慣はブロック、日数で記録する習慣はタイルとして積み上がります。間があいても合計は減りません。節目に届くと一度だけ知らせます。
+2. **時間か日数か、習慣ごとに選べる。** 習慣はいくつでも（12個まで）持てます。簿記はタイマーで時間を測り、読書や掃除は「やった」をワンタップで記録します。
+3. **キャラクター「つづ」がいる。** 記録だけをもとに、5つの表情（嬉しい・ふつう・待っている・心配・怒っている）を出します。
+4. **仲間と見せ合える（任意・ログイン制）。** 招待コードで2〜8人のグループを作り、共有をオンにした習慣の「今日やったか」と積み上げを見せ合えます。スタンプは1日3回までです。ログインすると、PC とスマホも同期します。
 
-設計の根拠：[リサーチ](docs/redesign/01_research.md)／[戦略・機能評価](docs/redesign/02_strategy.md)／[UI/UX設計](docs/redesign/03_ux_design.md)／[14日間の検証計画](docs/redesign/04_validation_plan.md)
+![今日・積み上げ・仲間](docs/screenshots/mobile-02-today.png)
 
-## できること
-
-| 画面 | 内容 |
+| 表情 | 出る条件（`src/lib/character.ts`） |
 |---|---|
-| 今日 | プランの文「もし〔きっかけ〕→ この一手（しおり）」と「この一手を始める」。下に「〔時間がない・気が重い〕なら → 小さな一手」 |
-| 再開 | 最後の実記録から2日以上空くと「また、ここから。」：しおりから／小さな一手で／プランを1つ変える |
-| プラン | きっかけ、しおり、予定の曜日、できない日の小さな一手（分数）、ふだんの目標時間、学習対象。例はチップで選ぶだけ |
-| 学習中 | 残り時間・進捗。一時停止／中断（記録して終了・記録せず終了・戻る）。目標到達で自動完了しない |
-| 学習終了 | 実時間（修正可）、今日やったこと、**しおりを挟む**（候補：続き／解き直し）、きっかけ通りか（任意1タップ） |
-| 週の見直し | 7日ごとに静かに提案。事実だけを見て、来週ひとつだけ変える（任意・オフ可） |
-| 記録 | 確認済み累計（17時間36分＋新しい記録）、一覧・追加・編集・削除、直近14日 |
-| 設定 | 支援の表示（プラン／記録中心＝比較用）、週の見直しのオン・オフ、バックアップ・復元・移行・消去 |
+| 嬉しい | 今日やった、計測中、または節目に届いた |
+| いつもどおり | 上の条件にも下の条件にも当てはまらない |
+| 待っている | 今日が予定の日で、17時を過ぎてもまだ記録がない |
+| 心配 | 予定の日に2日続けて記録がない（「ふつう」「きびしい」のとき） |
+| 怒っている | 予定の日に3日続けて記録がない（**「きびしい」のときだけ**） |
 
-**データの原則**：17時間36分（1,056分）は「基準値」としてのみ保持し、個別の記録は0件から始まります。2026-10-07以前の日付の記録は二重計上になるため入力・取り込みできません。
+![5つの表情](docs/screenshots/character-moods.png)
+
+- 予定のない日と、休むと決めた日は「途切れ」に数えません。
+- 一手でも動けば（小さな一手を含む）、その場で嬉しい顔に戻ります。戻ってきた人を叱らないためです。
+- セリフには、罪悪感をあおる言葉や人格を否定する言葉を使いません（テストで確認しています）。
+- 表情はキャラクターの設定でオフにできます。
+
+## データの原則
+
+- **確認済みの累計 17時間36分（1,056分・2026-10-07時点）** は「簿記」の習慣1つだけが土台として持ちます。土台から個別の記録を作ることはしません。2026-10-07以前の日付は、二重に数えてしまうため簿記には記録できません。
+- 初回は5つの案から選ぶだけです。架空の記録は作りません。簿記の土台を入れるかどうかも、初回の画面で選べます。
+- 「休むと決めた日」は失敗として扱いません。積み上げは増えも減りもしません。
+- 仲間に見えるのは、**共有をオンにした習慣の要約**（名前・今日やったか・この7日にやった日数・積み上げの合計・表情）と、表示名だけです。記録の中身・メモ・時刻・しおり・きっかけは送りません。共有は既定でオフです。詳しくはアプリ内の「プライバシー」画面を見てください。
+
+## v6 からの移行
+
+v6 で使っていたブラウザで開くと、最初の起動で自動的に移行します。
+
+- v6 の単一プラン（きっかけ・しおり・小さな一手・曜日・目標時間）は、「簿記3級」の習慣1つになります。土台はそのまま引き継ぎます。
+- これまでの記録はすべて簿記の記録として残ります。件数も分数も変わりません。
+- 移行前のデータは端末に残っています。「設定 → 移行前のデータを書き出す」で取り出せます。
+- v5/v6 のバックアップ（JSON）も、そのまま「バックアップから復元」で読み込めます。
 
 ## 起動方法（ローカル）
 
-必要なもの：Node.js 20 以上（22 で確認）
+必要なもの：Node.js 20 以上（22 で確認）。
 
 ```bash
 npm install
-npm run dev          # 開発サーバー  http://localhost:5173
+npm run dev          # http://localhost:5173
+npm run build && npm run preview   # 本番ビルド（Service Worker・オフラインが有効） http://localhost:4173
 ```
 
-本番ビルドを確認する場合（Service Worker・オフラインはこちらで有効）：
+共有と同期の設定をしなくても、アプリはすべて端末の中だけで動きます。その場合「仲間」タブには説明だけが出ます。
 
-```bash
-npm run build        # 型チェック + dist/ を生成（sw.js も自動生成）
-npm run preview      # http://localhost:4173
-```
+## 共有・同期を有効にする（Supabase）
 
-同じ Wi‑Fi のスマホから試す場合は `npx vite preview --host` で表示される `http://192.168.x.x:4173` を開きます。ただし **HTTP では Service Worker（オフライン・ホーム画面追加）は動きません**（localhost 以外は HTTPS が必要）。
+**1. プロジェクトを作る**
+[supabase.com](https://supabase.com) で無料のプロジェクトを作ります。リージョンは Tokyo（ap-northeast-1）がおすすめです。
 
-## 公開方法（静的ホスティング）
+**2. テーブルと権限を作る**
+SQL Editor を開き、[`supabase/migrations/0001_tsuzuku_v7.sql`](supabase/migrations/0001_tsuzuku_v7.sql) の中身を貼って実行します。これでテーブル・RLS（行単位の権限）・RPC がまとめて作られます。何度実行しても安全です。
 
-`npm run build` で生成される `dist/` フォルダを、HTTPS の静的ホスティングにそのまま置くだけで動きます。パスは相対指定なので、サブパス（例：`https://<user>.github.io/tsuzuku/`）でも動作します。
+**3. メールのログインを設定する**
+- Authentication → Providers で **Email** を有効にします。
+- Authentication → Email Templates の「Magic Link」で、本文に **`{{ .Token }}`**（6桁のコード）が入るようにします。例：`ログインコード：{{ .Token }}（10分間有効）`
+  - アプリはリンクではなくコードの入力でログインします。ホーム画面に追加した PWA でも、別のブラウザが開いてしまわないようにするためです。
+- Authentication → URL Configuration の Site URL に、公開 URL（例：`https://kitatsuginaiki-cpu.github.io/tuzuku/`）を入れます。
+- 無料プランの組み込みメールは送信数に制限があります。人数が増えたら Auth → SMTP Settings で自前の SMTP を設定してください。
 
-- **GitHub Pages（おすすめ・自動）**：GitHub で空のリポジトリ（例：`tsuzuku`）を作る → このフォルダを push する → リポジトリの Settings → Pages → Source を **GitHub Actions** にする。以降は `main` に push するたびに `.github/workflows/deploy.yml` がテスト・ビルド・公開を行い、`https://<ユーザー名>.github.io/tsuzuku/` で使えます。
-  ```bash
-  git init && git add . && git commit -m "つづく。v5"
-  git branch -M main
-  git remote add origin https://github.com/<ユーザー名>/tsuzuku.git
-  git push -u origin main
-  ```
-  ※ 公開リポジトリにはソースコードのみが含まれます。学習記録は各端末のブラウザ内にあり、リポジトリには入りません。
-- **Netlify / Cloudflare Pages**：ビルドコマンド `npm run build`、公開ディレクトリ `dist`。
+**4. 接続先をアプリに渡す**
+Project Settings → API の **Project URL** と **anon public** キーを、GitHub リポジトリの Settings → Secrets and variables → Actions に登録します。
 
-- **Claude の Artifact（すぐ試す用）**：`npm run build && node scripts/build-artifact.mjs` で `artifact/` を作り、Claude から公開しています（作者専用の非公開ページ）。Artifact 上では **オフライン起動（Service Worker）とファイルのダウンロードが使えない** ため、バックアップは 設定 →「バックアップをコピー」「貼り付けて復元」を使います。
+| 名前 | 値 |
+|---|---|
+| `VITE_SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | anon public キー |
 
-公開後：
-- **iPhone（Safari）**：公開URLを開く → 共有 → 「ホーム画面に追加」
-- **Android（Chrome）**：公開URLを開く → メニュー → 「アプリをインストール」または「ホーム画面に追加」
-- **PC（Chrome / Edge）**：アドレスバーのインストールアイコン（対応ブラウザでは アプリの 設定 画面にも「ホーム画面に追加」ボタンが出ます）
+> ⚠️ **service_role キーは絶対に登録しないでください。** これは全データを読み書きできる鍵です。anon キーは公開されても問題ありません。権限はすべてサーバー側の RLS が決めます。
 
-> ⚠️ データは「その端末・そのブラウザ・その公開URL」ごとに保存されます（Artifact 版と GitHub Pages 版も別々です）。**PCとスマホは自動では同期されません。** 端末やURLを移る場合は 設定 →「バックアップを書き出す」または「バックアップをコピー」→ もう一方で「バックアップから復元」または「貼り付けて復元」。ブラウザのデータ削除やプライベートブラウズでは消えることがあるため、ときどきバックアップしてください。
+ローカルで試すときは `.env.example` を `.env.local` にコピーして値を入れます（`.env*` はコミットされません）。
 
-## v3.1 試作版からの移行
+**5. 公開する**
+`main` に push するか、Actions の「Deploy to GitHub Pages」を手動で実行します。これで「仲間」タブにログイン画面が出ます。
 
-- v3.1 のバックアップJSON（`tsuzuku-backup-*.json`, `format: tsuzuku-v3`）を 設定 → 「バックアップから復元」で読み込むと、取り込む記録を選ぶ画面が出ます。
-- v3.1 と同じURLで公開した場合は、設定画面に「以前の試作版のデータが見つかりました」と表示されます。
-- どちらも **自動では取り込みません**。2026-10-07以前の記録・不正な記録は除外されます（v3.1 の使用ログ `events` は取り込みません）。
+### しくみ
+
+- **オフライン優先**：記録はまず端末に保存し、送信待ちの列（outbox）に積みます。つながったときに自動で送るので、電波がなくても記録は失われません。
+- **競合の解決**：同じデータを2台で変えたときは、新しく変えた方を採用します（Last-Write-Wins）。送信待ちの変更は、受信したデータで上書きしません。
+- **権限**：自分のデータは本人しか読み書きできません。仲間に見えるのは `shared_status` と `profiles` だけです。グループの作成・参加・退出は RPC 経由でのみ行い、定員8人と招待コード（10桁・約50ビット）をサーバーが確かめます。スタンプの「1日・相手ごとに3回まで」はトリガーで強制します。
+- **アカウント削除**：「仲間 → アカウントを削除」で、サーバー上のデータがすべて消えます（`auth.users` からカスケード削除）。端末の記録は残ります。
+
+## 公開（GitHub Pages）
+
+`main` に push すると、`.github/workflows/deploy.yml` がユニットテスト・ビルド・公開まで行います。同じワークフローの中で、RLS の検証（`scripts/test-rls.sh`）も別ジョブとして実行します。
+
+- 公開 URL：https://kitatsuginaiki-cpu.github.io/tuzuku/
+- ホーム画面に追加する方法
+  - iPhone：Safari で「共有 → ホーム画面に追加」
+  - Android：Chrome で「アプリをインストール」
+  - PC：アドレスバーのインストールアイコン
 
 ## テスト
 
 ```bash
-npm test             # ユニットテスト（Vitest）
-npx playwright install chromium   # 初回のみ（ブラウザ未導入の環境）
-npm run test:e2e     # E2E（Playwright。ビルド済み dist をプレビューして実行。axe によるアクセシビリティ監査を含む）
-node scripts/screenshots.mjs      # 主要画面のスクリーンショット（preview 起動中に実行）
+npm test                 # ユニットテスト（Vitest）
+npm run test:e2e         # E2E（Playwright・axe による監査・7つの画面幅・オフライン・仲間と同期は偽サーバーで確認）
+npm run test:rls         # RLS / RPC を実際の PostgreSQL 16 で検証（要 PostgreSQL 16。Docker は不要）
+node scripts/screenshots.mjs   # docs/screenshots を作り直す（preview を起動した状態で実行）
 ```
 
-実施結果は [docs/TEST_REPORT.md](docs/TEST_REPORT.md)、設計判断と旧版の監査は [docs/AUDIT_AND_DESIGN.md](docs/AUDIT_AND_DESIGN.md)。
+結果は [docs/TEST_REPORT.md](docs/TEST_REPORT.md)、14日間の検証計画は [docs/v7/validation_plan.md](docs/v7/validation_plan.md) にあります。
 
 ## 構成
 
 ```
-src/
-  lib/config.ts     基準値（1,056分・2026-10-07）、再開しきい値 RESUME_GAP_DAYS=2、文字数上限
-  lib/session.ts    タイマーの状態機械（running / paused / completing）— 時刻差で計算
-  lib/records.ts    記録の型・検証・累計・ホーム状態・14日集計
-  lib/backup.ts     JSON 書き出し／読み込み、v3.1 移行
-  lib/storage.ts    IndexedDB（records / kv ストア、原子的な保存）→ localStorage → メモリの順に利用
-  store.tsx         画面状態と操作（保存状態・通知・タブ間同期）
-  screens/          今日・学習中・学習終了・記録・設定
-  sw-template.js    Service Worker（ビルド時にプリキャッシュ一覧を埋め込み）
-tests/unit, tests/e2e
+src/lib/model.ts        習慣（時間型／日数型）・できない日の組・全体設定・テンプレート・v6からの移行
+src/lib/accumulate.ts   積み上げ（減らない合計）・ブロック・タイル・節目
+src/lib/character.ts    表情のルール（CHARACTER_RULES で調整）とセリフ
+src/lib/storage.ts      IndexedDB（kv / records / outbox）→ localStorage → メモリ
+src/lib/sync.ts         端末間同期（outbox・LWW）と、仲間に見せる要約の作成
+src/lib/remote.ts       サーバーとの境界（未設定なら端末だけで動く）
+src/lib/supabaseRemote.ts  Supabase 実装（anon キーのみ）
+src/screens/            今日・積み上げ・仲間・記録・習慣の編集・計測・終了・見直し・設定・プライバシー
+src/components/Character.tsx  オリジナルキャラクター「つづ」（SVG・5表情）
+supabase/migrations/    テーブル・RLS・RPC
+supabase/tests/         RLS の検証 SQL
+tests/unit, tests/e2e   （tests/e2e/fakeRemote.ts は E2E 用の偽サーバー）
 ```
-
-依存パッケージ（実行時）：React / React DOM のみ。解析・広告・外部フォント・外部通信はありません。
 
 ## 調整できる値
 
-- 再開判定の日数：`src/lib/config.ts` の `RESUME_GAP_DAYS`
-- 既定の目標時間：アプリの 設定 画面（初期値 20分）
-- 文字数上限：`LIMITS`（次の一歩 80字 など）
-
-## 将来のクラウド同期に向けて
-
-記録は ID・`updatedAt` 付きの独立したレコード、設定は単一ドキュメントとして保存しているため、将来サーバー同期を足す場合も `Repository` インターフェース（`src/lib/storage.ts`）の実装を追加する形で拡張できます。今回のMVPには含めていません。
+| 値 | 場所 |
+|---|---|
+| 表情のしきい値（待つ時刻 17時・心配 2日・怒る 3日） | `CHARACTER_RULES`（`src/lib/character.ts`） |
+| 節目（時間・日数） | アプリの設定画面 |
+| 1日の区切り（0〜4時） | アプリの設定画面 |
+| ブロック1つの分数 | `blockMinutes`（既定は30分） |
+| 再開を出すまでの日数 | `RESUME_GAP_DAYS`（`src/lib/config.ts`） |
+| スタンプの上限・グループの定員 | `src/lib/remote.ts` とマイグレーション SQL の両方 |

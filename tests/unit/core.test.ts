@@ -35,6 +35,9 @@ import {
   type StudyRecord,
 } from '../../src/lib/records';
 import { buildBackup, ImportError, parseImportText } from '../../src/lib/backup';
+import { DEFAULT_APP_SETTINGS, habitFromTemplate, HABIT_TEMPLATES } from '../../src/lib/model';
+
+const BOKI = { ...habitFromTemplate(HABIT_TEMPLATES.find((t) => t.key === 'boki')!, 0, true), id: 'h-boki', nextAction: '次' };
 
 const T0 = new Date(2026, 10, 1, 14, 0, 0).getTime();
 const MIN = 60_000;
@@ -226,26 +229,27 @@ describe('summary14 / sort', () => {
 describe('backup / restore', () => {
   const today = '2026-11-01';
   it('round-trips', () => {
-    const rs = [rec({ id: 'a' }), rec({ id: 'b', studyDate: '2026-10-20', minutes: 45 })];
-    const json = JSON.stringify(buildBackup({ ...DEFAULT_SETTINGS, nextAction: '次' }, rs));
+    const rs = [rec({ id: 'a', habitId: BOKI.id, kind: 'done' }), rec({ id: 'b', habitId: BOKI.id, kind: 'done', studyDate: '2026-10-20', minutes: 45 })];
+    const json = JSON.stringify(buildBackup([BOKI], { ...DEFAULT_APP_SETTINGS, strictness: 'strict' }, rs));
     const parsed = parseImportText(json, today);
     expect(parsed.kind).toBe('backup');
     if (parsed.kind !== 'backup') return;
     expect(parsed.records).toHaveLength(2);
     expect(totalMinutes(parsed.records)).toBe(1056 + 65);
-    expect(parsed.settings.nextAction).toBe('次');
+    expect(parsed.habits[0]).toMatchObject({ id: 'h-boki', nextAction: '次', baseline: true });
+    expect(parsed.settings.strictness).toBe('strict');
   });
   it('rejects invalid JSON, foreign files, baseline mismatch, duplicates, bad records', () => {
     expect(() => parseImportText('{', today)).toThrow(ImportError);
     expect(() => parseImportText('{"hello":1}', today)).toThrow(/バックアップファイルではありません/);
-    const good = buildBackup(DEFAULT_SETTINGS, [rec({ id: 'a' })]);
+    const good = buildBackup([BOKI], DEFAULT_APP_SETTINGS, [rec({ id: 'a', habitId: BOKI.id })]);
     expect(() => parseImportText(JSON.stringify({ ...good, baseline: { minutes: 2000, asOf: '2026-10-07' } }), today)).toThrow(/一致しない/);
-    expect(() => parseImportText(JSON.stringify({ ...good, records: [rec({ id: 'x' }), rec({ id: 'x' })] }), today)).toThrow(/重複/);
-    expect(() => parseImportText(JSON.stringify({ ...good, records: [rec({ studyDate: '2026-10-01' })] }), today)).toThrow(/確認済みの累計/);
+    expect(() => parseImportText(JSON.stringify({ ...good, records: [rec({ id: 'x', habitId: BOKI.id }), rec({ id: 'x', habitId: BOKI.id })] }), today)).toThrow(/重複/);
+    expect(() => parseImportText(JSON.stringify({ ...good, records: [rec({ studyDate: '2026-10-01', habitId: BOKI.id })] }), today)).toThrow(/確認済みの累計/);
     expect(() => parseImportText(JSON.stringify({ ...good, schemaVersion: 99 }), today)).toThrow(/新しいバージョン/);
   });
   it('strips script-like strings safely (stored as text only)', () => {
-    const json = JSON.stringify(buildBackup(DEFAULT_SETTINGS, [rec({ id: 'a', title: '<img src=x onerror=alert(1)>' })]));
+    const json = JSON.stringify(buildBackup([BOKI], DEFAULT_APP_SETTINGS, [rec({ id: 'a', habitId: BOKI.id, title: '<img src=x onerror=alert(1)>' })]));
     const parsed = parseImportText(json, today);
     if (parsed.kind === 'backup') expect(parsed.records[0].title).toBe('<img src=x onerror=alert(1)>');
   });

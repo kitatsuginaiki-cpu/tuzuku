@@ -7,12 +7,13 @@ import {
   looksVague,
   planDaysLabel,
   sanitizeReviews,
-  smallPlan,
+  defaultSmall,
   weekFacts,
 } from '../../src/lib/plan';
 import { DEFAULT_SETTINGS, sanitizeSettings, type StudyRecord } from '../../src/lib/records';
 import { buildBackup, parseImportText } from '../../src/lib/backup';
 import { sanitizeActive } from '../../src/lib/session';
+import { DEFAULT_APP_SETTINGS, blankHabit } from '../../src/lib/model';
 
 const rec = (p: Partial<StudyRecord> = {}): StudyRecord => ({
   id: p.id ?? Math.random().toString(36).slice(2),
@@ -58,12 +59,14 @@ describe('settings v6 migration', () => {
   });
 });
 
-describe('small plan', () => {
-  it('falls back to 2 minutes when not set', () => {
-    expect(smallPlan(DEFAULT_SETTINGS)).toEqual({ label: '2分だけ', minutes: 2, custom: false });
+describe('small plan (per habit)', () => {
+  it('falls back to 2 minutes when no coping plan is set', () => {
+    expect(defaultSmall(blankHabit(0, 'time'))).toEqual({ label: '2分だけ', minutes: 2, custom: false });
+    expect(defaultSmall(blankHabit(0, 'days')).custom).toBe(false);
   });
-  it('uses the user-defined small action', () => {
-    expect(smallPlan({ ...DEFAULT_SETTINGS, smallAction: '1問だけ解く', smallMinutes: 5 })).toEqual({ label: '1問だけ解く', minutes: 5, custom: true });
+  it('uses the first coping plan', () => {
+    const h = { ...blankHabit(0, 'time'), copingPlans: [{ when: '疲れた', instead: '1問だけ解く', minutes: 5 }] };
+    expect(defaultSmall(h)).toEqual({ label: '1問だけ解く', minutes: 5, custom: true });
   });
 });
 
@@ -160,12 +163,13 @@ describe('reviews & backup v2', () => {
   it('round-trips reviews and behaviour facts; still reads v1 backups', () => {
     const records = [rec({ id: 'r1', mode: 'small', fromBookmark: true, cueFollowed: 'yes', openToStartSec: 42, plannedDay: true, bookmarkLeft: true, supportMode: 'plan' })];
     const reviews = sanitizeReviews([{ id: 'v', date: '2026-11-01', change: 'small', ease: 4, note: '' }]);
-    const json = JSON.stringify(buildBackup({ ...DEFAULT_SETTINGS, smallAction: '1問だけ' }, records, reviews));
+    const h = { ...blankHabit(0, 'time'), id: 'h1', name: '簿記', copingPlans: [{ when: '疲れた', instead: '1問だけ', minutes: 5 }] };
+    const json = JSON.stringify(buildBackup([h], DEFAULT_APP_SETTINGS, records.map((r) => ({ ...r, habitId: 'h1' })), reviews));
     const p = parseImportText(json, '2026-11-01');
     if (p.kind !== 'backup') throw new Error('kind');
     expect(p.records[0]).toMatchObject({ mode: 'small', fromBookmark: true, cueFollowed: 'yes', openToStartSec: 42, plannedDay: true, bookmarkLeft: true, supportMode: 'plan' });
     expect(p.reviews).toHaveLength(1);
-    expect(p.settings.smallAction).toBe('1問だけ');
+    expect(p.habits[0].copingPlans[0].instead).toBe('1問だけ');
 
     const v1 = { format: 'tsuzuku-backup', schemaVersion: 1, baseline: { minutes: 1056, asOf: '2026-10-07' }, settings: { nextAction: 'x' }, records: [rec({ id: 'old' })] };
     const p1 = parseImportText(JSON.stringify(v1), '2026-11-01');
@@ -173,5 +177,9 @@ describe('reviews & backup v2', () => {
     expect(p1.records).toHaveLength(1);
     expect(p1.reviews).toEqual([]);
     expect(p1.settings.supportMode).toBe('plan');
+    // v1/v2 は「簿記」の習慣1件に移行し、記録はその習慣に属する
+    expect(p1.habits).toHaveLength(1);
+    expect(p1.habits[0]).toMatchObject({ nextAction: 'x', baseline: true, trackingType: 'time' });
+    expect(p1.records[0].habitId).toBe(p1.habits[0].id);
   });
 });

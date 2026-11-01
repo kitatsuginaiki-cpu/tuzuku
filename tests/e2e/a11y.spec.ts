@@ -1,72 +1,101 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { addManual, closeToasts, gotoRecords, open, setNext } from './helpers';
-
-/** 未設定時は「学習を始める」、しおりがあるときは「この一手を始める」 */
-const START = /^(学習を始める|この一手を始める)$/;
+import { addManual, card, closeToasts, gotoFriends, gotoRecords, gotoStack, open, setup } from './helpers';
+import { FakeBackend } from './fakeRemote';
 
 /** WCAG 2.0/2.1/2.2 A・AA のルールで自動監査（自動検査で分かる範囲のみ） */
 async function audit(page: Page, label: string) {
   await closeToasts(page);
-  await page.clock.resume(); // axe は内部でタイマーを使うため、止めていた仮想時計を動かす
+  try {
+    await page.clock.resume(); // axe は内部でタイマーを使うため、止めていた仮想時計を動かす
+  } catch {
+    /* 時計を入れていないページ */
+  }
   const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   const summary = r.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
   expect(summary, `${label}\n${summary.join('\n')}`).toEqual([]);
 }
 
-test('axe：主要画面・ダイアログに WCAG A/AA の自動検出違反がない', async ({ page }) => {
+test('axe：はじめて・今日・計測・終了・記録', async ({ page }) => {
   await open(page);
-  await audit(page, '今日（未設定）');
-  await setNext(page, '仕訳の基本を3問解く');
-  await audit(page, '今日');
-
-  await page.locator('.next-body').click();
-  await audit(page, '次の一歩ダイアログ');
+  await audit(page, 'はじめて');
+  await setup(page, ['boki', 'reading', 'morning']);
+  await card(page, '読書').getByRole('button', { name: 'やった', exact: true }).click();
+  await audit(page, '今日（キャラクターあり）');
+  await card(page, '簿記3級').getByRole('button', { name: 'できない日は' }).click();
+  await audit(page, 'できない日の組ダイアログ');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: START }).click();
+  await page.clock.pauseAt(new Date('2026-11-01T10:00:05+09:00'));
+  await card(page, '簿記3級').getByRole('button', { name: 'しおりから始める' }).click();
   await page.clock.runFor(5 * 60_000);
-  await audit(page, '学習中');
-  await page.getByRole('button', { name: '一時停止' }).click();
-  await audit(page, '一時停止中');
+  await audit(page, '計測中');
+  await page.clock.pauseAt(new Date('2026-11-01T10:06:00+09:00'));
   await page.getByRole('button', { name: '中断' }).click();
   await audit(page, '中断ダイアログ');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '再開' }).click();
-  await page.getByRole('button', { name: '学習を終える' }).click();
-  await audit(page, '学習終了');
+  await page.getByRole('button', { name: '終える', exact: true }).click();
+  await audit(page, '終了');
   await page.getByRole('button', { name: '保存して終了' }).click();
+  await expect(page.locator('.home')).toBeVisible();
 
-  await gotoRecords(page);
-  await audit(page, '記録（一覧）');
-  await addManual(page, { date: '2026-10-20', minutes: 30, title: '講義#14' });
-  await closeToasts(page);
+  await gotoRecords(page, '簿記3級');
+  await audit(page, '記録（時間型）');
   await page.locator('.record-item').first().click();
   await audit(page, '記録の編集ダイアログ');
   await page.keyboard.press('Escape');
+  await gotoRecords(page, '読書');
+  await page.getByRole('button', { name: '過去の日を記録する' }).click();
+  await audit(page, '日数型の記録ダイアログ');
+  await page.keyboard.press('Escape');
+});
 
+test('axe：積み上げ・習慣の編集・設定・見直し・プライバシー', async ({ page }) => {
+  await open(page);
+  await setup(page, ['boki', 'reading']);
+  await gotoRecords(page, '簿記3級');
+  await addManual(page, { date: '2026-10-28', minutes: 30, title: '問題集 第11章' });
+  await gotoStack(page);
+  await audit(page, '積み上げ');
+  await page.goto('/#');
+  await card(page, '読書').getByRole('button', { name: '読書を編集' }).click();
+  await audit(page, '習慣の編集');
+  await page.goto('/#');
+  await page.getByRole('button', { name: '＋ 習慣を追加' }).click();
+  await page.getByRole('button', { name: '＋ 組を追加' }).click();
+  await page.getByRole('button', { name: '追加する' }).click();
+  await audit(page, '習慣の追加（エラー表示）');
   await page.goto('/#options');
   await audit(page, '設定');
-});
-
-test('axe：プラン・週の見直し・再開画面', async ({ page }) => {
-  await open(page, '/#plan');
-  await page.locator('#plan-cue').fill('昼食後にコーヒーを淹れたら');
-  await page.locator('#plan-nextAction').fill('第11章の仕訳問題を3問解く');
-  await page.locator('#plan-smallAction').fill('1問だけ解く');
-  await audit(page, 'プラン');
-  await page.getByRole('button', { name: 'プランを保存' }).click();
-  await audit(page, '今日（プランあり）');
-  await page.goto('/#records');
-  await addManual(page, { date: '2026-10-28', minutes: 30, title: '問題集 第11章' });
-  await page.goto('/#');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('また、ここから。');
-  await audit(page, '再開');
   await page.goto('/#review');
   await audit(page, '週の見直し');
+  await page.goto('/#privacy');
+  await audit(page, 'プライバシー');
+  await page.goto('/#friends');
+  await audit(page, '仲間（接続先なし）');
 });
 
-test('axe：記録0件の空状態', async ({ page }) => {
-  await open(page, '/#records');
-  await audit(page, '記録（空）');
+test('axe：仲間（ログイン・グループ）', async ({ browser }) => {
+  const backend = new FakeBackend();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
+  await backend.attach(ctx, 'X');
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await setup(page, ['boki']);
+  await gotoFriends(page);
+  await audit(page, 'ログイン（メール）');
+  await page.locator('#si-email').fill('x@example.com');
+  await page.getByRole('button', { name: 'コードを送る' }).click();
+  await audit(page, 'ログイン（コード）');
+  await page.locator('#si-code').fill('123456');
+  await page.getByRole('button', { name: 'ログイン' }).click();
+  await audit(page, 'ログイン（表示名）');
+  await page.locator('#si-name').fill('えっくす');
+  await page.getByRole('button', { name: 'はじめる' }).click();
+  await page.getByRole('switch', { name: '簿記3級' }).check();
+  await page.getByRole('button', { name: '作る' }).click();
+  await expect(page.locator('.group')).toBeVisible();
+  await audit(page, '仲間（グループ）');
+  await page.getByRole('button', { name: 'アカウントを削除' }).click();
+  await audit(page, 'アカウント削除ダイアログ');
 });

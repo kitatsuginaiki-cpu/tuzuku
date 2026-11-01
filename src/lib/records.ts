@@ -13,6 +13,10 @@ export type RecordSource = 'timer' | 'manual' | 'import_v3';
 
 export interface StudyRecord {
   id: string;
+  /** v7〜：どの習慣の記録か（v6 以前の記録は移行時に「簿記」へ付け替える） */
+  habitId?: string;
+  /** v7〜：done=やった（学習した）、rest=休むと決めた日（失敗ではない・積み上げに数えない） */
+  kind?: 'done' | 'rest';
   /** ローカル日付 YYYY-MM-DD（学習を始めた日） */
   studyDate: string;
   startedAt: string | null;

@@ -5,3 +5,6 @@ playwright-report/
 *.tsbuildinfo
 .DS_Store
 artifact/
+.env
+.env.*
+!.env.example

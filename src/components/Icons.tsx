@@ -115,3 +115,20 @@ export const IconPlan = (p: P) => (
     <path d="M6 8.2v7.6M10.5 6H20M10.5 18H20M10.5 12H17" />
   </Svg>
 );
+/** 積み上げ（ブロック） */
+export const IconStack = (p: P) => (
+  <Svg {...p}>
+    <rect x="4" y="14" width="7" height="6" rx="1.2" />
+    <rect x="13" y="14" width="7" height="6" rx="1.2" />
+    <rect x="8.5" y="6" width="7" height="6" rx="1.2" />
+  </Svg>
+);
+/** 仲間 */
+export const IconPeople = (p: P) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8.5" r="3.2" />
+    <path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" />
+    <circle cx="16.8" cy="9.5" r="2.5" />
+    <path d="M15.6 14.7c2.6-.3 4.5 1.4 5 4.3" />
+  </Svg>
+);

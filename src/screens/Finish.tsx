@@ -11,6 +11,9 @@ type SaveState = 'idle' | 'saving' | 'error' | 'saved';
 
 export function FinishScreen({ active, navigate }: { active: ActiveSession; navigate: (r: string) => void }) {
   const { state, actions } = useStore();
+  const habit = state.habits.find((h) => h.id === active.habitId) ?? state.habits[0];
+  const habitNext = habit?.nextAction ?? '';
+  const habitCue = habit?.cue ?? '';
   const end = active.completingAt ?? Date.now();
   const measured = suggestedMinutes(active, end);
   const tooShort = measured < 1;
@@ -20,8 +23,8 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
   const [editingTime, setEditingTime] = useState(tooShort || tooLong);
   const [title, setTitle] = useState(active.title);
   // 小さな一手のあとは、しおり（まだ終えていない一手）をそのまま残しておく
-  const keepBookmark = active.mode === 'small' && !!state.settings.nextAction;
-  const [next, setNext] = useState(keepBookmark ? state.settings.nextAction : '');
+  const keepBookmark = active.mode === 'small' && !!habitNext;
+  const [next, setNext] = useState(keepBookmark ? habitNext : '');
   const [cueFollowed, setCueFollowed] = useState<'yes' | 'no' | null>(null);
   const [errors, setErrors] = useState<{ minutes?: string; title?: string; next?: string }>({});
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -29,9 +32,9 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
   const h1 = useFocusHeading<HTMLHeadingElement>();
   const minutesRef = useRef<HTMLInputElement>(null);
 
-  const fallbackTitle = state.settings.subject ? `${state.settings.subject}の学習` : '学習';
+  const fallbackTitle = habit?.name || '記録';
   const suggestions = bookmarkSuggestions(title, next);
-  const askCue = state.settings.supportMode === 'plan' && !!state.settings.cue;
+  const askCue = state.settings.supportMode === 'plan' && !!habitCue;
   const minutesNum = Number(minutes);
   const pausedMin = Math.floor(pausedTotalMs(active, end) / 60000);
 
@@ -62,7 +65,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
       const result = await actions.saveFinish({ minutes: minutesNum, title, nextAction: next, cueFollowed });
       setSaveState('saved');
       navigate('/');
-      actions.toast(result === 'duplicate' ? 'この学習はすでに保存済みです。' : `${formatMinutes(minutesNum)}の学習を保存しました。`);
+      actions.toast(result === 'duplicate' ? 'この学習はすでに保存済みです。' : `${formatMinutes(minutesNum)}を積み上げました。`);
     } catch (err) {
       console.error(err);
       setSaveState('error');
@@ -82,12 +85,12 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
             <IconCheck size={24} />
           </span>
           <h1 className="h1 finish-h1" ref={h1} tabIndex={-1}>
-            学習を終えました。
+            {habit ? `${habit.name}、おつかれさま。` : 'おつかれさま。'}
           </h1>
 
           <section className="finish-time" aria-labelledby="time-label">
             <h2 id="time-label" className="eyebrow">
-              今回の学習時間
+              今回の時間
             </h2>
             {!editingTime ? (
               <div className="time-row">
@@ -191,7 +194,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
             />
             <div className="field-meta">
               <p id="next-help" className="help">
-                {keepBookmark && next === state.settings.nextAction
+                {keepBookmark && next === habitNext
                   ? 'しおりはそのまま残っています。変えることもできます'
                   : next.trim()
                     ? '次に開いたとき、この一手から始められます'
@@ -221,7 +224,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
               <legend className="field-label">
                 きっかけ通りに始めましたか？ <span className="optional">任意</span>
               </legend>
-              <p className="help">「{state.settings.cue}」</p>
+              <p className="help">「{habitCue}」</p>
               <div className="chips" role="radiogroup" aria-label="きっかけ通りに始めたか">
                 {(
                   [

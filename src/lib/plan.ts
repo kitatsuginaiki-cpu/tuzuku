@@ -4,7 +4,8 @@
  */
 import { LIMITS, REVIEW_INTERVAL_DAYS, TWO_MINUTE_TARGET_MINUTES } from './config';
 import { addDays, dayDiff, isValidDateString, parseLocalDate } from './dates';
-import { cleanText, type Settings, type StudyRecord } from './records';
+import { cleanText, type StudyRecord } from './records';
+import type { AppSettings, Habit } from './model';
 
 /* ---------------- メタ情報・週の見直し ---------------- */
 
@@ -15,14 +16,26 @@ export interface Meta {
   lastReviewOn: string | null;
   /** 「今週はしない」を選んだ日（その日から次の間隔まで提案しない） */
   reviewSnoozedOn: string | null;
+  /** v7：知らせ済みの節目（習慣ID → 値） */
+  milestonesShown: Record<string, number[]>;
+  /** v7：アプリを開いた日（検証用。最大180日分） */
+  openedDays: string[];
 }
 
-export const DEFAULT_META: Meta = Object.freeze({ firstUsedOn: null, lastReviewOn: null, reviewSnoozedOn: null }) as Meta;
+export const DEFAULT_META: Meta = Object.freeze({
+  firstUsedOn: null,
+  lastReviewOn: null,
+  reviewSnoozedOn: null,
+  milestonesShown: {},
+  openedDays: [],
+}) as Meta;
 
 export type ReviewChange = 'cue' | 'action' | 'small' | 'days' | 'none';
 
 export interface Review {
   id: string;
+  /** v7：見直した習慣（v6 以前は null） */
+  habitId: string | null;
   /** 見直しをした日 */
   date: string;
   /** 対象期間の初日（7日前） */
@@ -46,7 +59,19 @@ export const REVIEW_CHANGE_LABEL: Record<ReviewChange, string> = {
 export function sanitizeMeta(raw: unknown): Meta {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const d = (v: unknown) => (isValidDateString(v) ? v : null);
-  return { firstUsedOn: d(r.firstUsedOn), lastReviewOn: d(r.lastReviewOn), reviewSnoozedOn: d(r.reviewSnoozedOn) };
+  const ms: Record<string, number[]> = {};
+  if (r.milestonesShown && typeof r.milestonesShown === 'object') {
+    for (const [k, v] of Object.entries(r.milestonesShown as Record<string, unknown>).slice(0, 50))
+      if (Array.isArray(v)) ms[k.slice(0, 100)] = v.filter((n): n is number => typeof n === 'number').slice(0, 20);
+  }
+  const opened = Array.isArray(r.openedDays) ? r.openedDays.filter(isValidDateString).slice(-180) : [];
+  return {
+    firstUsedOn: d(r.firstUsedOn),
+    lastReviewOn: d(r.lastReviewOn),
+    reviewSnoozedOn: d(r.reviewSnoozedOn),
+    milestonesShown: ms,
+    openedDays: opened,
+  };
 }
 
 export function sanitizeReviews(raw: unknown): Review[] {
@@ -62,6 +87,7 @@ export function sanitizeReviews(raw: unknown): Review[] {
     ids.add(r.id);
     out.push({
       id: r.id,
+      habitId: typeof r.habitId === 'string' ? r.habitId : null,
       date: r.date,
       periodStart: isValidDateString(r.periodStart) ? r.periodStart : addDays(r.date, -(REVIEW_INTERVAL_DAYS - 1)),
       change,
@@ -80,7 +106,7 @@ export function sanitizeReviews(raw: unknown): Review[] {
  * - 「今週はしない」から7日以内ではない
  * - 実際の記録が1件以上ある（何も事実がない状態で振り返りを求めない）
  */
-export function isReviewDue(settings: Settings, meta: Meta, records: readonly StudyRecord[], today: string): boolean {
+export function isReviewDue(settings: Pick<AppSettings, 'supportMode' | 'weeklyReview'>, meta: Meta, records: readonly StudyRecord[], today: string): boolean {
   if (settings.supportMode !== 'plan' || !settings.weeklyReview) return false;
   if (records.length === 0) return false;
   const since = meta.lastReviewOn ?? meta.firstUsedOn ?? earliest(records);
@@ -120,9 +146,9 @@ export interface WeekFacts {
  * 直近7日（today を含む）の事実だけを集計する。
  * 予定日は「アプリを使い始めた日（since）」以降だけを数える（使う前の日を「できなかった日」にしない）。
  */
-export function weekFacts(records: readonly StudyRecord[], settings: Settings, today: string, since: string | null = null): WeekFacts {
+export function weekFacts(records: readonly StudyRecord[], settings: { planDays: number[] }, today: string, since: string | null = null): WeekFacts {
   const start = addDays(today, -(REVIEW_INTERVAL_DAYS - 1));
-  const inRange = records.filter((r) => r.studyDate >= start && r.studyDate <= today);
+  const inRange = records.filter((r) => r.studyDate >= start && r.studyDate <= today && (r.kind ?? 'done') === 'done');
   const days = new Set(inRange.map((r) => r.studyDate));
   let plannedDays = 0;
   let plannedDone = 0;
@@ -152,22 +178,18 @@ export function weekFacts(records: readonly StudyRecord[], settings: Settings, t
   };
 }
 
-/* ---------------- 小さな一手 ---------------- */
+/* ---------------- 予定 ---------------- */
 
-export interface SmallPlan {
-  label: string;
-  minutes: number;
-  /** 本人が設定したか（未設定なら従来の2分） */
-  custom: boolean;
+export function isPlannedDay(habit: { planDays: number[] }, date: string): boolean {
+  return habit.planDays.includes(parseLocalDate(date).getDay());
 }
 
-export function smallPlan(settings: Settings): SmallPlan {
-  if (settings.smallAction) return { label: settings.smallAction, minutes: settings.smallMinutes, custom: true };
+/** 小さな一手の初期値（できない日の組が未設定のときは「2分だけ」） */
+export function defaultSmall(habit: Habit): { label: string; minutes: number; custom: boolean } {
+  const c = habit.copingPlans[0];
+  if (c) return { label: c.instead, minutes: c.minutes ?? TWO_MINUTE_TARGET_MINUTES, custom: true };
+  if (habit.trackingType === 'days') return { label: 'ほんの少しだけやる', minutes: TWO_MINUTE_TARGET_MINUTES, custom: false };
   return { label: `${TWO_MINUTE_TARGET_MINUTES}分だけ`, minutes: TWO_MINUTE_TARGET_MINUTES, custom: false };
-}
-
-export function isPlannedDay(settings: Settings, date: string): boolean {
-  return settings.planDays.includes(parseLocalDate(date).getDay());
 }
 
 export const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];

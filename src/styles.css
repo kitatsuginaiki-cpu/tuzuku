@@ -142,6 +142,8 @@ a {
   padding-bottom: calc(var(--nav-h) + var(--safe-b) + 96px);
 }
 .app.page-settings .main-inner,
+.app.page-habit .main-inner,
+.app.page-privacy .main-inner,
 .app.page-review .main-inner {
   padding-bottom: calc(40px + var(--safe-b));
 }
@@ -1405,6 +1407,10 @@ a {
   .page-home .main-inner,
   .page-records .main-inner,
   .page-plan .main-inner,
+  .page-habit .main-inner,
+  .page-stack .main-inner,
+  .page-friends .main-inner,
+  .page-privacy .main-inner,
   .page-review .main-inner,
   .page-settings .main-inner {
     max-width: none;
@@ -1414,6 +1420,10 @@ a {
   .page-home .screen,
   .page-records .screen,
   .page-plan .screen,
+  .page-habit .screen,
+  .page-stack .screen,
+  .page-friends .screen,
+  .page-privacy .screen,
   .page-review .screen,
   .page-settings .screen {
     max-width: 680px;
@@ -1986,4 +1996,857 @@ a {
   .page-home .btn-small {
     background: var(--accent-soft);
   }
+}
+
+/* ===================================================================== */
+/* v7：複数の習慣・積み上げ・キャラクター・仲間                              */
+/* ===================================================================== */
+:root {
+  --c-navy: #2d4a6b;
+  --c-green: #427c67;
+  --c-teal: #2f7f86;
+  --c-amber: #a8741a;
+  --c-rose: #a8505e;
+  --c-slate: #5d6b78;
+  --base-block: #c9b48a;
+  --tile-small: #9cc2b0;
+  --tile-rest: #dfe3e8;
+}
+.tab {
+  flex: 1 1 0;
+  max-width: 104px;
+  width: auto;
+}
+.tab-label {
+  white-space: nowrap;
+}
+.h2 {
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.h1-sm {
+  font-size: 1.75rem;
+}
+.spaced {
+  margin-top: 16px;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.input-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.select {
+  appearance: auto;
+  max-width: 320px;
+}
+.panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.panel > .h2 + * {
+  margin-top: 10px;
+}
+.panel .help + .share-list,
+.panel p + p {
+  margin-top: 8px;
+}
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  font-weight: 700;
+}
+.switch-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+/* ---- 今日：キャラクター ---- */
+.buddy {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 12px 16px 12px 10px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.buddy .chara {
+  flex: none;
+}
+.buddy-talk {
+  min-width: 0;
+}
+.buddy-line {
+  position: relative;
+  font-weight: 800;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+}
+.buddy-fact {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.buddy.is-angry {
+  border-color: #e7b8ab;
+  background: #fff8f5;
+}
+.buddy.is-happy {
+  border-color: #cfe2d8;
+  background: #f6fbf8;
+}
+.buddy.is-worried {
+  border-color: #c9dbe8;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .buddy.is-happy .chara {
+    animation: buddy-hop 0.9s ease-out 1;
+  }
+  .buddy.is-angry .chara {
+    animation: buddy-shake 0.5s ease-in-out 1;
+  }
+}
+@keyframes buddy-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-6px);
+  }
+}
+@keyframes buddy-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+.active-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+
+/* ---- 今日：習慣カード ---- */
+.habit-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.habit-card {
+  --hc: var(--c-navy);
+  position: relative;
+  padding: 16px 16px 14px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.habit-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--hc);
+}
+.c-navy {
+  --hc: var(--c-navy);
+}
+.c-green {
+  --hc: var(--c-green);
+}
+.c-teal {
+  --hc: var(--c-teal);
+}
+.c-amber {
+  --hc: var(--c-amber);
+}
+.c-rose {
+  --hc: var(--c-rose);
+}
+.c-slate {
+  --hc: var(--c-slate);
+}
+.habit-card.is-new {
+  box-shadow: 0 0 0 3px rgba(66, 124, 103, 0.28);
+}
+.hc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.hc-name {
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.hc-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.hc-status.is-on {
+  color: var(--accent-text);
+}
+.hc-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin-top: 2px;
+  font-weight: 800;
+}
+.hc-total-label {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.hc-sub {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.hc-resume {
+  margin-top: 6px;
+  color: var(--accent-text);
+  font-weight: 700;
+  font-size: 0.9375rem;
+}
+.hc-plan {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  font-size: 0.9375rem;
+}
+.hc-plan div {
+  display: grid;
+  grid-template-columns: 4em 1fr;
+  gap: 8px;
+}
+.hc-plan dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding-top: 2px;
+}
+.hc-plan dd {
+  margin: 0;
+  font-weight: 600;
+}
+.hc-plan dd.is-new {
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+.hc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hc-actions .btn {
+  min-height: 44px;
+  width: auto;
+  margin-top: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.hc-edit {
+  margin-left: auto;
+}
+.hc-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--accent-text);
+  font-weight: 800;
+}
+.hc-done .link-btn {
+  margin-left: 6px;
+  font-weight: 600;
+}
+.add-habit {
+  margin-top: 10px;
+}
+.coping-list {
+  margin-top: 4px;
+}
+.choice.is-rest .choice-name {
+  color: var(--muted);
+}
+
+/* ---- はじめて ---- */
+.onboarding {
+  margin-top: 28px;
+}
+.onboarding .lead {
+  margin-top: 6px;
+}
+.ob-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+.ob-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #cfd6d3;
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.ob-item.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ob-item input {
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+  flex: none;
+}
+.ob-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.ob-name {
+  font-weight: 800;
+}
+.ob-desc {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.ob-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.onboarding .check-row {
+  margin-top: 12px;
+}
+
+/* ---- 習慣の編集 ---- */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.seg-item {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid #cfd6d3;
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.seg-item input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.seg-item:focus-within {
+  box-shadow: var(--focus);
+}
+.seg-item.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.seg-item.is-locked {
+  cursor: not-allowed;
+}
+.seg-name {
+  font-weight: 800;
+}
+.seg-desc {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.coping-edit {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--canvas);
+}
+.coping-min .input {
+  max-width: 120px;
+}
+.coping-del {
+  justify-self: start;
+}
+.plan-block > .btn-outline {
+  margin-top: 12px;
+}
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--hc, var(--av, #999));
+}
+.plan-save .btn-danger-ghost {
+  margin-top: 8px;
+}
+
+/* ---- 積み上げ ---- */
+.stack-card {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.stack-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.stack-total {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.blocks-fig,
+.tiles-fig {
+  margin: 14px 0 0;
+}
+.blocks {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 3px;
+}
+.block {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--hc, var(--c-navy));
+}
+.block.is-base {
+  background: var(--base-block);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend .block,
+.legend .tile {
+  width: 12px;
+  height: 12px;
+  min-height: 0;
+}
+.tiles {
+  width: 100%;
+  max-width: 420px;
+  border-collapse: separate;
+  border-spacing: 4px;
+  table-layout: fixed;
+}
+.tiles th {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.tiles td {
+  padding: 0;
+}
+.tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  min-height: 28px;
+  border-radius: 6px;
+  background: var(--empty-bg);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.tile.is-planned {
+  box-shadow: inset 0 0 0 1.5px var(--control-border);
+}
+.tile.is-done {
+  background: var(--hc, var(--accent));
+  color: #fff;
+  box-shadow: none;
+}
+.tile.is-small {
+  background: var(--tile-small);
+  color: var(--ink);
+  box-shadow: none;
+}
+.tile.is-rest {
+  background: var(--tile-rest);
+  color: var(--ink);
+  box-shadow: none;
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(98, 113, 128, 0.25) 4px 5px);
+}
+.tile.is-before,
+.tile.is-future {
+  background: transparent;
+  color: #5a6876;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.tile.is-today {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.legend .tile.is-planned {
+  background: var(--empty-bg);
+}
+.milestone {
+  margin-top: 14px;
+}
+.milestone-text {
+  margin-top: 12px;
+  font-size: 0.9375rem;
+}
+.milestone .progress {
+  margin-top: 6px;
+}
+.stack-archived {
+  margin-top: 24px;
+}
+.stack-archived summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+}
+
+/* ---- 仲間 ---- */
+.sync-line {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.share-list {
+  display: grid;
+  gap: 2px;
+}
+.group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.members {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+}
+.member {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.member-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.member-name {
+  font-weight: 800;
+}
+.avatar {
+  --av: var(--c-green);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--av);
+  color: #fff;
+  font-weight: 800;
+  flex: none;
+}
+.av-green {
+  --av: #427c67;
+}
+.av-blue {
+  --av: #2d5f8f;
+}
+.av-orange {
+  --av: #a3561f;
+}
+.av-pink {
+  --av: #a4466b;
+}
+.av-purple {
+  --av: #6a4f99;
+}
+.av-gray {
+  --av: #5d6b78;
+}
+.statuses {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.status {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: 'face name today' 'face meta meta';
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--canvas);
+}
+.status .chara {
+  grid-area: face;
+}
+.status-name {
+  grid-area: name;
+  font-weight: 700;
+}
+.status-today {
+  grid-area: today;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+.status.is-done .status-today,
+.status.is-small .status-today {
+  color: var(--accent-text);
+}
+.status-meta {
+  grid-area: meta;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.stamps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip.stamp {
+  min-width: 0;
+}
+.stamp-feed {
+  display: grid;
+  gap: 6px;
+}
+.stamp-feed li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.stamp-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 800;
+  font-size: 0.875rem;
+}
+.invite {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.invite .row-actions {
+  margin-top: 8px;
+}
+.code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--canvas);
+}
+.friends-privacy {
+  margin-top: 20px;
+}
+
+/* ---- プライバシー ---- */
+.prose section {
+  margin-top: 22px;
+}
+.prose p {
+  margin-top: 8px;
+}
+.bullets {
+  margin-top: 8px;
+  padding-left: 1.2em;
+  list-style: disc;
+}
+.bullets li + li {
+  margin-top: 4px;
+}
+
+/* ---- 設定：表情一覧 ---- */
+.mood-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 12px 0;
+}
+.mood-gallery li {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.settings-block fieldset {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+.settings-block fieldset:disabled {
+  opacity: 0.6;
+}
+.habit-pick {
+  margin-top: 12px;
+}
+
+/* ---- PC 補助 ---- */
+.info-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.info-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.9375rem;
+}
+.info-list li span:first-child {
+  min-width: 0;
+}
+.info-list .num {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media (max-width: 359px) {
+  .seg {
+    grid-template-columns: 1fr;
+  }
+  .habit-card {
+    padding: 14px 12px 12px 16px;
+  }
+  .block {
+    width: 12px;
+    height: 12px;
+  }
+}
+@media (min-width: 768px) {
+  .coping-edit {
+    grid-template-columns: 1fr 1.4fr auto;
+    align-items: start;
+  }
+  .coping-del {
+    grid-column: 1 / -1;
+  }
+}
+@media (forced-colors: active) {
+  .tile.is-done,
+  .tile.is-small,
+  .block {
+    background: CanvasText;
+    color: Canvas;
+  }
+  .tile.is-rest {
+    border: 1px dashed CanvasText;
+  }
+}
+/* 淡い緑の背景の上の補足文はコントラストを確保する（4.5:1 以上） */
+.seg-item.is-on .seg-desc,
+.ob-item.is-on .ob-desc,
+.buddy.is-happy .buddy-fact,
+.status .status-meta,
+.status .status-today {
+  color: #4f5d6a;
+}
+.status.is-done .status-today,
+.status.is-small .status-today {
+  color: var(--accent-text);
 }

@@ -9,6 +9,8 @@ import { IconCheck, IconPause, IconPlay, IconStop } from '../components/Icons';
 
 export function SessionScreen({ active, navigate }: { active: ActiveSession; navigate: (r: string) => void }) {
   const { state, actions } = useStore();
+  const habit = state.habits.find((h) => h.id === active.habitId);
+  const habitTarget = habit?.targetMinutes ?? 20;
   const now = useNow(active.status === 'running');
   const [interrupt, setInterrupt] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
@@ -41,7 +43,7 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
 
   return (
     <div className="screen session">
-      <TopBar title={paused ? '一時停止中' : '学習中'} onBack={() => navigate('/')} backLabel="ホームに戻る（計測は続きます）" />
+      <TopBar title={paused ? '一時停止中' : `${habit?.name ?? ''} 計測中`.trim()} onBack={() => navigate('/')} backLabel="ホームに戻る（計測は続きます）" />
 
       <div className="session-body">
         {state.recovered && (
@@ -54,7 +56,7 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
         )}
         {away != null && (
           <p className="notice" role="status">
-            画面を離れていた約{Math.round(away / 60000)}分も計測に含まれています。終了時に実際の学習時間を修正できます。
+            画面を離れていた約{Math.round(away / 60000)}分も計測に含まれています。終了時に実際の時間を修正できます。
             <button type="button" className="link-btn" onClick={() => setAway(null)}>
               閉じる
             </button>
@@ -67,7 +69,7 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
             {active.subject && (active.mode === 'small' || active.fromBookmark ? ` · ${active.subject}` : active.subject)}
           </p>
           <h1 className="session-title" ref={h1} tabIndex={-1}>
-            {active.title || '学習内容は終了時に入力できます'}
+            {active.title || '内容は終了時に入力できます'}
           </h1>
         </div>
 
@@ -103,9 +105,9 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
               {active.mode === 'small'
                 ? `小さな一手の${targetMin}分になりました。このまま続けても、ここで終えても構いません。`
                 : `目標の${targetMin}分を過ぎました。このまま続けることも、終えることもできます。`}
-              {active.mode === 'small' && state.settings.targetMinutes > targetMin && (
-                <button type="button" className="link-btn" onClick={() => actions.changeTarget(state.settings.targetMinutes)}>
-                  目標を{state.settings.targetMinutes}分にする
+              {active.mode === 'small' && habitTarget > targetMin && (
+                <button type="button" className="link-btn" onClick={() => actions.changeTarget(habitTarget)}>
+                  目標を{habitTarget}分にする
                 </button>
               )}
             </p>
@@ -140,15 +142,15 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
       <div className="session-foot">
         <button type="button" className="btn btn-primary btn-xl" onClick={actions.beginFinish}>
           <IconCheck size={20} />
-          学習を終える
+          終える
         </button>
-        <p className="foot-caption">実際に学習した時間を確認して記録します。</p>
+        <p className="foot-caption">実際にやった時間を確認して積み上げます。</p>
       </div>
 
       <Dialog
         open={interrupt}
         onClose={() => setInterrupt(false)}
-        title="学習を中断しますか？"
+        title="計測を中断しますか？"
         role="alertdialog"
         description="「記録せず終了」を選ぶと、今回の計測は破棄されます。"
       >

@@ -1,17 +1,26 @@
 import { useState } from 'react';
 import { LIMITS } from '../lib/config';
-import { formatMinutes, formatShortDate, localDate } from '../lib/dates';
+import { formatMinutes, formatShortDate } from '../lib/dates';
 import { REVIEW_CHANGE_LABEL, weekFacts, type ReviewChange } from '../lib/plan';
-import { useStore } from '../store';
+import { todayOf, useStore } from '../store';
 import { TopBar, useFocusHeading } from '../components/common';
-import { setPlanFocus } from './Plan';
+import { editHabit } from './HabitEditor';
 
 const CHANGES: ReviewChange[] = ['cue', 'action', 'small', 'days', 'none'];
 
 /** 週の見直し：この7日間の「事実」だけを示し、来週ひとつだけ変えることを選ぶ */
 export function Review({ navigate }: { navigate: (r: string) => void }) {
   const { state, actions } = useStore();
-  const f = weekFacts(state.records, state.settings, localDate(), state.meta.firstUsedOn);
+  const habits = state.habits.filter((h) => !h.archived).sort((a, b) => a.order - b.order);
+  const [habitId, setHabitId] = useState<string | null>(habits[0]?.id ?? null);
+  const habit = habits.find((h) => h.id === habitId) ?? habits[0];
+  const f = weekFacts(
+    state.records.filter((r) => r.habitId === habit?.id),
+    habit ?? { planDays: [] },
+    todayOf(state.settings),
+    state.meta.firstUsedOn,
+  );
+  const time = habit?.trackingType !== 'days';
   const [change, setChange] = useState<ReviewChange | null>(null);
   const [ease, setEase] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -29,14 +38,14 @@ export function Review({ navigate }: { navigate: (r: string) => void }) {
     }
     setBusy(true);
     try {
-      await actions.saveReview({ change, ease, note });
-      if (change === 'none') {
+      await actions.saveReview({ habitId: habit?.id ?? null, change, ease, note });
+      if (change === 'none' || !habit) {
         actions.toast('見直しを保存しました。');
         navigate('/');
       } else {
-        setPlanFocus(change);
+        editHabit(habit.id, change);
         actions.toast(`見直しを保存しました。「${REVIEW_CHANGE_LABEL[change]}」をここで変更できます。`);
-        navigate('/plan');
+        navigate('/habit');
       }
     } catch {
       setErr('保存できませんでした。入力は保持しています。もう一度お試しください。');
@@ -59,9 +68,18 @@ export function Review({ navigate }: { navigate: (r: string) => void }) {
         </p>
       </section>
 
+      {habits.length > 1 && (
+        <div className="chips habit-pick" role="radiogroup" aria-label="見直す習慣">
+          {habits.map((h) => (
+            <button type="button" role="radio" key={h.id} aria-checked={habit?.id === h.id} className={`chip${habit?.id === h.id ? ' is-on' : ''}`} onClick={() => setHabitId(h.id)}>
+              {h.name}
+            </button>
+          ))}
+        </div>
+      )}
       <dl className="facts">
         <div>
-          <dt>学習した日</dt>
+          <dt>やった日</dt>
           <dd>
             <span className="num">{f.studyDays}</span>日
             {f.plannedDays > 0 && (
@@ -71,10 +89,12 @@ export function Review({ navigate }: { navigate: (r: string) => void }) {
             )}
           </dd>
         </div>
-        <div>
-          <dt>学習時間</dt>
-          <dd className="num">{formatMinutes(f.minutes)}</dd>
-        </div>
+        {time && (
+          <div>
+            <dt>時間</dt>
+            <dd className="num">{formatMinutes(f.minutes)}</dd>
+          </div>
+        )}
         <div>
           <dt>しおりから始めた</dt>
           <dd>
