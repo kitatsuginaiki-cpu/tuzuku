@@ -24,6 +24,10 @@ export interface Meta {
   levelShown: number;
   /** v7.1.1：最後にバックアップを書き出した（またはコピーした）日時 */
   lastBackupAt: string | null;
+  /** v7.2：週の見直しの状態（習慣ごと） */
+  reviewByHabit: Record<string, { lastReviewOn: string | null; snoozedOn: string | null }>;
+  /** v7.2：休みが続いたときの案内を「このままでいい」で閉じた記録（習慣ごと） */
+  restPromptDismissed: Record<string, { start: string; at: number }>;
 }
 
 export const DEFAULT_META: Meta = Object.freeze({
@@ -34,6 +38,8 @@ export const DEFAULT_META: Meta = Object.freeze({
   openedDays: [],
   levelShown: 1,
   lastBackupAt: null,
+  reviewByHabit: {},
+  restPromptDismissed: {},
 }) as Meta;
 
 export type ReviewChange = 'cue' | 'action' | 'small' | 'days' | 'none';
@@ -77,9 +83,35 @@ export function sanitizeMeta(raw: unknown): Meta {
     reviewSnoozedOn: d(r.reviewSnoozedOn),
     milestonesShown: ms,
     openedDays: opened,
+    reviewByHabit: sanitizeReviewByHabit(r.reviewByHabit),
+    restPromptDismissed: sanitizeRestDismissed(r.restPromptDismissed),
     lastBackupAt: typeof r.lastBackupAt === 'string' && !Number.isNaN(Date.parse(r.lastBackupAt)) ? r.lastBackupAt : null,
     levelShown: typeof r.levelShown === 'number' && Number.isInteger(r.levelShown) && r.levelShown >= 1 && r.levelShown <= 5 ? r.levelShown : 1,
   };
+}
+
+function sanitizeReviewByHabit(raw: unknown): Meta['reviewByHabit'] {
+  const out: Meta['reviewByHabit'] = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 50)) {
+    const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+    out[k.slice(0, 100)] = {
+      lastReviewOn: isValidDateString(o.lastReviewOn) ? o.lastReviewOn : null,
+      snoozedOn: isValidDateString(o.snoozedOn) ? o.snoozedOn : null,
+    };
+  }
+  return out;
+}
+
+function sanitizeRestDismissed(raw: unknown): Meta['restPromptDismissed'] {
+  const out: Meta['restPromptDismissed'] = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 50)) {
+    const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+    if (isValidDateString(o.start) && typeof o.at === 'number' && Number.isInteger(o.at) && o.at >= 0 && o.at < 1000)
+      out[k.slice(0, 100)] = { start: o.start, at: o.at };
+  }
+  return out;
 }
 
 export function sanitizeReviews(raw: unknown): Review[] {

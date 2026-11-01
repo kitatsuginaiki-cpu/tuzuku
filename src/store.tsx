@@ -28,6 +28,7 @@ import { crossedMilestone, habitTotal } from './lib/accumulate';
 import { accessoryAvailable, growthOf, type CharaAccessory } from './lib/character';
 import { openRepository, requestPersistence, type AccountState, type Op, type Repository, type Snapshot, type StorageKind, type SyncKind } from './lib/storage';
 import { SyncEngine, type SyncStatus } from './lib/sync';
+import { reviewStateOf } from './lib/today';
 import { syncEnabled } from './lib/remote';
 
 export interface Toast {
@@ -35,6 +36,8 @@ export interface Toast {
   message: string;
   tone: 'info' | 'error';
   action?: { label: string; run: () => void };
+  /** 節目などの大事な知らせ。あとから来たふつうの通知に隠されない */
+  priority?: 'high';
 }
 
 export interface State {
@@ -98,12 +101,15 @@ interface Actions {
   replaceAll(data: { habits: Habit[]; settings: AppSettings; records: StudyRecord[]; reviews: Review[] }, reason: 'reset' | 'restore'): Promise<void>;
   addRecords(records: StudyRecord[], habitPatch?: { habitId: string; nextAction?: string; cue?: string }): Promise<number>;
   saveReview(input: ReviewInput): Promise<void>;
-  snoozeReview(): Promise<void>;
+  /** 指定した習慣の週の見直しを、今週は出さない */
+  snoozeReview(habitIds: string[]): Promise<void>;
+  /** 休みが続いたときの案内を閉じる（同じ休みの続きでは、さらに4日続くまで出さない） */
+  dismissRestPrompt(habitId: string, streak: { start: string; count: number }): Promise<void>;
   setAccount(account: AccountState | null): Promise<void>;
   /** バックアップを書き出した・コピーしたことを記録する */
   markBackup(): Promise<void>;
   syncNow(): Promise<void>;
-  toast(message: string, opts?: { tone?: Toast['tone']; action?: Toast['action'] }): void;
+  toast(message: string, opts?: { tone?: Toast['tone']; action?: Toast['action']; priority?: Toast['priority'] }): void;
   dismissToast(id: number): void;
   clearRecovered(): void;
   clearFlash(): void;
@@ -161,7 +167,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
 
   const toast = useCallback<Actions['toast']>((message, opts) => {
     const id = ++toastSeq.current;
-    setToasts((t) => [...t.slice(-2), { id, message, tone: opts?.tone ?? 'info', action: opts?.action }]);
+    setToasts((t) => [...t.slice(-2), { id, message, tone: opts?.tone ?? 'info', action: opts?.action, priority: opts?.priority }]);
   }, []);
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
@@ -273,7 +279,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
       if (shown.includes(v)) return;
       const meta = { ...s.meta, milestonesShown: { ...s.meta.milestonesShown, [habitId]: [...shown, v] } };
       setState((x) => ({ ...x, meta, justMilestone: { habitId, value: v } }));
-      toast(`節目：${h.name} が ${h.trackingType === 'time' ? `${v}時間` : `${v}日`} に到達しました。`);
+      toast(`節目：${h.name} が ${h.trackingType === 'time' ? `${v}時間` : `${v}日`} に到達しました。`, { priority: 'high' });
       await repo.current!.write([{ t: 'kv', key: 'meta', value: meta }]).catch(() => undefined);
     },
     [toast],
@@ -588,7 +594,10 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           note: cleanText(input.note, LIMITS.reviewNote),
           createdAt: new Date().toISOString(),
         };
-        const meta: Meta = { ...s.meta, lastReviewOn: today, reviewSnoozedOn: null };
+        // 見直しは習慣ごと。ほかの習慣の見直し時期には影響しない
+        const meta: Meta = input.habitId
+          ? { ...s.meta, reviewByHabit: { ...s.meta.reviewByHabit, [input.habitId]: { lastReviewOn: today, snoozedOn: null } } }
+          : { ...s.meta, lastReviewOn: today, reviewSnoozedOn: null };
         const reviews = [...s.reviews, review];
         await commit(
           [
@@ -599,8 +608,18 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
         );
         setState((x) => ({ ...x, meta, reviews }));
       },
-      async snoozeReview() {
-        const meta: Meta = { ...stateRef.current.meta, reviewSnoozedOn: todayOf(stateRef.current.settings) };
+      async snoozeReview(habitIds) {
+        const s = stateRef.current;
+        const today = todayOf(s.settings);
+        const reviewByHabit = { ...s.meta.reviewByHabit };
+        for (const id of habitIds) reviewByHabit[id] = { lastReviewOn: reviewStateOf(s.meta, id).lastReviewOn, snoozedOn: today };
+        const meta: Meta = { ...s.meta, reviewByHabit };
+        await commit([{ t: 'kv', key: 'meta', value: meta }]);
+        setState((x) => ({ ...x, meta }));
+      },
+      async dismissRestPrompt(habitId, streak) {
+        const s = stateRef.current;
+        const meta: Meta = { ...s.meta, restPromptDismissed: { ...s.meta.restPromptDismissed, [habitId]: { start: streak.start, at: streak.count } } };
         await commit([{ t: 'kv', key: 'meta', value: meta }]);
         setState((x) => ({ ...x, meta }));
       },

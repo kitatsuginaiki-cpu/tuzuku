@@ -5,6 +5,8 @@ import { FakeBackend } from './fakeRemote';
 
 /** WCAG 2.0/2.1/2.2 A・AA のルールで自動監査（自動検査で分かる範囲のみ） */
 async function audit(page: Page, label: string) {
+  // アニメーションの途中（半透明など）で色のコントラストを測らないよう、動きを止めてから監査する
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await closeToasts(page);
   try {
     await page.clock.resume(); // axe は内部でタイマーを使うため、止めていた仮想時計を動かす
@@ -26,11 +28,11 @@ test('axe：はじめて・今日・計測・終了・記録', async ({ page }) 
   await audit(page, 'できない日の組ダイアログ');
   await page.keyboard.press('Escape');
 
-  await page.clock.pauseAt(new Date('2026-11-01T10:00:05+09:00'));
+  await page.clock.pauseAt(new Date('2026-11-01T10:05:00+09:00'));
   await card(page, '簿記3級').getByRole('button', { name: 'しおりから始める' }).click();
   await page.clock.runFor(5 * 60_000);
   await audit(page, '計測中');
-  await page.clock.pauseAt(new Date('2026-11-01T10:06:00+09:00'));
+  await page.clock.pauseAt(new Date('2026-11-01T10:15:00+09:00'));
   await page.getByRole('button', { name: '中断' }).click();
   await audit(page, '中断ダイアログ');
   await page.keyboard.press('Escape');

@@ -339,9 +339,10 @@ test.describe('再開', () => {
     await gotoRecords(page);
     await addManual(page, { date: '2026-10-30', minutes: 20, title: '問題集 第11章' });
     await gotoToday(page);
-    await expect(card(page, BOKI).locator('.hc-resume')).toHaveText('また、ここから。しおりは残っています。');
+    const resume = card(page, BOKI).getByRole('group', { name: 'また、ここから。' });
+    await expect(resume).toContainText('最後の記録：10月30日（金）。しおりは残っています。');
     await expect(page.getByText(/日ぶり|日空き|連続|失敗/)).toHaveCount(0);
-    await start(page);
+    await resume.getByRole('button', { name: /^しおりから始める/ }).click();
     await expect(page.getByRole('heading', { name: BOOKMARK })).toBeVisible();
   });
 
@@ -351,7 +352,7 @@ test.describe('再開', () => {
     await gotoRecords(page);
     await addManual(page, { date: '2026-10-31', minutes: 20, title: '講義' });
     await gotoToday(page);
-    await expect(card(page, BOKI).locator('.hc-resume')).toHaveCount(0);
+    await expect(card(page, BOKI).getByRole('group', { name: 'また、ここから。' })).toHaveCount(0);
   });
 });
 

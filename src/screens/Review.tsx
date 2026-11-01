@@ -5,6 +5,13 @@ import { REVIEW_CHANGE_LABEL, weekFacts, type ReviewChange } from '../lib/plan';
 import { todayOf, useStore } from '../store';
 import { TopBar, useFocusHeading } from '../components/common';
 import { editHabit } from './HabitEditor';
+import { habitsDueForReview } from '../lib/today';
+
+/** 見直す習慣（Home から渡す。null なら見直し時期の最初の習慣） */
+let target: string | null = null;
+export function reviewHabit(id: string | null) {
+  target = id;
+}
 
 const CHANGES: ReviewChange[] = ['cue', 'action', 'small', 'days', 'none'];
 
@@ -12,7 +19,12 @@ const CHANGES: ReviewChange[] = ['cue', 'action', 'small', 'days', 'none'];
 export function Review({ navigate }: { navigate: (r: string) => void }) {
   const { state, actions } = useStore();
   const habits = state.habits.filter((h) => !h.archived).sort((a, b) => a.order - b.order);
-  const [habitId, setHabitId] = useState<string | null>(habits[0]?.id ?? null);
+  const due = habitsDueForReview(habits, state.settings, state.meta, state.records, todayOf(state.settings));
+  const [habitId, setHabitId] = useState<string | null>(() => {
+    const t = target;
+    target = null;
+    return (t && habits.some((h) => h.id === t) ? t : null) ?? due[0]?.id ?? habits[0]?.id ?? null;
+  });
   const habit = habits.find((h) => h.id === habitId) ?? habits[0];
   const f = weekFacts(
     state.records.filter((r) => r.habitId === habit?.id),
@@ -73,6 +85,7 @@ export function Review({ navigate }: { navigate: (r: string) => void }) {
           {habits.map((h) => (
             <button type="button" role="radio" key={h.id} aria-checked={habit?.id === h.id} className={`chip${habit?.id === h.id ? ' is-on' : ''}`} onClick={() => setHabitId(h.id)}>
               {h.name}
+              {due.some((d) => d.id === h.id) && <span className="due-dot">見直し時期</span>}
             </button>
           ))}
         </div>
@@ -163,7 +176,7 @@ export function Review({ navigate }: { navigate: (r: string) => void }) {
           <button type="submit" className="btn btn-primary btn-xl" disabled={busy}>
             {busy ? '保存中…' : '見直しを保存'}
           </button>
-          <button type="button" className="btn btn-ghost" onClick={() => actions.snoozeReview().then(() => navigate('/')).catch(() => setErr('保存できませんでした。'))}>
+          <button type="button" className="btn btn-ghost" onClick={() => actions.snoozeReview(habit ? [habit.id] : []).then(() => navigate('/')).catch(() => setErr('保存できませんでした。'))}>
             今週はしない
           </button>
         </div>

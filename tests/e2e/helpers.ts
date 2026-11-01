@@ -36,6 +36,7 @@ export const card = (page: Page, name: string) => page.locator('.habit-card', { 
 export const clock = (page: Page) => page.locator('.timer-clock');
 
 async function nav(page: Page, name: string, hash: string) {
+  await closeToasts(page); // 通知は下部ナビの位置に出るため（× で閉じてからナビを使う）
   const link = page.getByRole('navigation', { name: 'メイン' }).getByRole('link', { name, exact: true }).first();
   if (await link.isVisible()) await link.click();
   else await page.goto(hash); // 設定画面などには下部ナビがない
@@ -92,7 +93,7 @@ export async function closeToasts(page: Page) {
   // モーダルが開いている間は背面の通知を操作できないので触らない
   if (await page.locator('dialog[open]').count()) return;
   const btns = page.locator('.toast-close');
-  while ((await btns.count()) > 0) await btns.first().click();
+  for (let i = 0; i < 6 && (await btns.count()) > 0; i++) await btns.first().click();
 }
 
 export async function editHabit(page: Page, name: string) {

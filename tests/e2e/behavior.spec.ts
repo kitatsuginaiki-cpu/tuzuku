@@ -170,7 +170,8 @@ test.describe('キャラクター「つづ」', () => {
     await expect(buddy).toHaveClass(/is-worried/);
     await expect(buddy.getByRole('img', { name: /^つづきぼし Lv\.1（はじまり）：心配そう$/ })).toBeVisible();
     await expect(buddy.getByText('予定の日に6日、記録がありません')).toBeVisible();
-    await card(p, READ).getByRole('button', { name: 'やった', exact: true }).click();
+    // 間があいた習慣は、再開の3つの選択肢から始める
+    await card(p, READ).getByRole('button', { name: /^やった/ }).click();
     await expect(buddy).toHaveClass(/is-happy/);
     await expect(buddy.getByRole('img', { name: /つづきぼし.*：嬉しそう/ })).toBeVisible();
   });
@@ -182,8 +183,7 @@ test.describe('キャラクター「つづ」', () => {
     await gotoToday(p);
     await expect(p.locator('.buddy')).toHaveClass(/is-angry/);
     await expect(p.locator('.buddy-line')).not.toHaveText(/ダメ|失敗|サボ/);
-    await card(p, READ).getByRole('button', { name: 'できない日は' }).click();
-    await p.getByRole('button', { name: /眠いなら/ }).click();
+    await card(p, READ).getByRole('button', { name: /^小さな一手でやった/ }).click();
     await expect(p.locator('.buddy')).toHaveClass(/is-happy/);
   });
 
@@ -285,7 +285,7 @@ test.describe('戻り方：週の見直し（習慣ごと）', () => {
   test('7日後に静かに提案 → 習慣を選んで事実を見る → 1つ選ぶとその習慣の該当欄へ', async ({ page }) => {
     const p = await startedAWeekAgo(page, ['boki', 'reading']);
     await expect(p.getByRole('heading', { name: '週の見直し（1分）' })).toBeVisible();
-    await p.getByRole('button', { name: '見直す' }).click();
+    await p.getByRole('button', { name: '見直す', exact: true }).click();
     await p.getByRole('radio', { name: READ }).click();
     await expect(p.locator('.facts')).toContainText('やった日');
     await expect(p.locator('.facts')).not.toContainText('時間'); // 日数型には時間の行がない
@@ -322,5 +322,98 @@ test.describe('表示・1日の区切り', () => {
     await card(page, READ).getByRole('button', { name: 'やった', exact: true }).click();
     await gotoRecords(page);
     await expect(page.locator('.record-date')).toContainText('11月1日（日）');
+  });
+});
+
+test.describe('今日の画面：並び・再開・休みの見直し・見直しは習慣ごと（v7.2）', () => {
+  test('今日の予定でまだの習慣が上。記録すると「今日の記録済み」へ下がり、全部終わると知らせる', async ({ page }) => {
+    await open(page); // 11/1（日）
+    await setup(page, ['morning', 'boki', 'reading', 'room', 'note']);
+    const groups = page.locator('.habit-group');
+    await expect(groups.locator('.group-title')).toHaveText([/今日やること\s*5/]);
+    await card(page, '朝8:00に起きて作業に入る').getByRole('button', { name: 'やった', exact: true }).click();
+    await closeToasts(page);
+    await expect(groups.locator('.group-title')).toHaveText([/今日やること\s*4/, /今日の記録済み\s*1/]);
+    // 最初のカードは簿記（今日やることの先頭）
+    await expect(page.locator('.habit-group.is-todo .habit-card').first().locator('.hc-name')).toHaveText('簿記3級');
+    // 記録済みの日数型カードは、きっかけ・しおりを省いた小さな表示
+    await expect(page.locator('.habit-group.is-done .habit-card.is-compact .hc-plan')).toHaveCount(0);
+    for (const n of ['読書', '部屋をきれいに保つ', 'note更新']) {
+      await card(page, n).getByRole('button', { name: 'やった', exact: true }).click();
+      await closeToasts(page);
+    }
+    await card(page, BOKI).getByRole('button', { name: 'できない日は' }).click();
+    await page.getByRole('button', { name: /今日は休むと決める/ }).click();
+    await expect(page.locator('.all-done')).toHaveText('今日の予定はすべて記録しました。');
+    await expect(page.locator('.habit-group.is-todo')).toHaveCount(0);
+  });
+
+  test('予定外の日の習慣は「予定のない習慣」にまとまる', async ({ page }) => {
+    await open(page, '/', new Date('2026-11-03T10:00:00+09:00')); // 火
+    await setup(page, ['boki', 'note']);
+    await expect(page.locator('.habit-group.is-todo .hc-name')).toHaveText(['簿記3級']);
+    await expect(page.locator('.habit-group.is-unplanned .hc-name')).toHaveText(['note更新']);
+  });
+
+  test('2日以上あくと、再開の3つの選択肢（しおりから／小さな一手／プランを見直す）が出る', async ({ page }) => {
+    await open(page);
+    await setup(page, ['boki', 'reading']);
+    await gotoRecords(page);
+    await page.locator('.habit-pick').getByRole('radio', { name: '読書' }).click();
+    await addPastDay(page, '2026-10-29');
+    await closeToasts(page);
+    await gotoToday(page);
+    const r = card(page, READ);
+    const resume = r.getByRole('group', { name: 'また、ここから。' });
+    await expect(resume).toContainText('最後の記録：10月29日（木）。しおりは残っています。');
+    await expect(resume.getByRole('button')).toHaveText([/^やった第4章を最後まで/, /^小さな一手でやった眠い|^小さな一手でやった1ページ/, /^プランを見直す/, /ほかの小さな一手・今日は休む/, '']);
+    await resume.getByRole('button', { name: /^プランを見直す/ }).click();
+    await expect(page.locator('#habit-name')).toHaveValue(READ);
+    await page.getByRole('button', { name: '今日に戻る' }).click();
+    await card(page, READ).getByRole('button', { name: /^小さな一手でやった/ }).click();
+    await expect(card(page, READ).locator('.hc-status')).toHaveText('小さな一手');
+    await expect(card(page, READ).getByRole('group', { name: 'また、ここから。' })).toHaveCount(0);
+  });
+
+  test('休むと決めた日が3日続くと、責めずに計画の見直しを案内する。「このままでいい」で閉じられる', async ({ page }) => {
+    await open(page);
+    await setup(page, ['reading']);
+    await gotoRecords(page);
+    for (const d of ['2026-10-29', '2026-10-30', '2026-10-31']) {
+      await addPastDay(page, d, '休むと決めた');
+      await closeToasts(page);
+    }
+    await gotoToday(page);
+    const prompt = card(page, READ).getByRole('group', { name: '休むと決めた日が3日続いています' });
+    await expect(prompt).toContainText('休むのは悪いことではありません');
+    await expect(page.locator('.buddy')).not.toHaveClass(/is-worried|is-angry/); // 罰しない
+    await prompt.getByRole('button', { name: '予定の曜日を見直す' }).click();
+    await expect(page.locator('.habit-editor')).toBeVisible();
+    await expect(page.getByRole('group', { name: '予定の曜日（押すと切り替わります）' })).toBeFocused();
+    await page.getByRole('button', { name: '今日に戻る' }).click();
+    await card(page, READ).getByRole('button', { name: 'このままでいい' }).click();
+    await expect(card(page, READ).getByRole('group', { name: /休むと決めた日が/ })).toHaveCount(0);
+    await page.reload();
+    await expect(card(page, READ).getByRole('group', { name: /休むと決めた日が/ })).toHaveCount(0);
+  });
+
+  test('見直しは習慣ごと：読書を見直しても、簿記の見直しは残る', async ({ page }) => {
+    await open(page, '/', new Date('2026-10-25T10:00:00+09:00'));
+    await setup(page, ['boki', 'reading']);
+    await card(page, READ).getByRole('button', { name: 'やった', exact: true }).click();
+    await gotoRecords(page, BOKI);
+    await addManual(page, { date: '2026-10-25', minutes: 20, title: '講義' });
+    const p = await page.context().newPage();
+    await page.close();
+    await open(p, '/', NOW);
+    await expect(p.locator('.review-row')).toContainText('簿記3級・読書');
+    await p.getByRole('button', { name: '見直す', exact: true }).click();
+    await p.getByRole('radio', { name: /読書/ }).click();
+    await p.getByRole('radio', { name: /今のままで続ける/ }).check();
+    await p.getByRole('button', { name: '見直しを保存' }).click();
+    await expect(p.locator('.review-row')).toContainText('簿記3級');
+    await expect(p.locator('.review-row')).not.toContainText('読書');
+    await p.getByRole('button', { name: '今週はしない' }).click();
+    await expect(p.locator('.review-row')).toHaveCount(0);
   });
 });

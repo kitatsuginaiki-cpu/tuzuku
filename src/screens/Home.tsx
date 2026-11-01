@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
-import { BASELINE, RESUME_GAP_DAYS } from '../lib/config';
-import { dayDiff, formatClock, formatJpDate, formatShortDate } from '../lib/dates';
-import { isPlannedDay, isReviewDue, defaultSmall } from '../lib/plan';
+import { BASELINE } from '../lib/config';
+import { formatClock, formatJpDate, formatShortDate } from '../lib/dates';
+import { defaultSmall } from '../lib/plan';
+import { habitsDueForReview, shouldPromptRest, todayView, type HabitToday } from '../lib/today';
 import { elapsedMs } from '../lib/session';
-import { dayStatus, formatTotal, habitTotal, type DayStatus } from '../lib/accumulate';
+import { formatTotal, habitTotal, type DayStatus } from '../lib/accumulate';
 import { CHARACTER_NAME, lineFor, moodFor, MOOD_LABEL } from '../lib/character';
-import { HABIT_TEMPLATES, habitFromTemplate, isDone, MAX_HABITS, type CopingPlan, type Habit } from '../lib/model';
+import { HABIT_TEMPLATES, habitFromTemplate, MAX_HABITS, type CopingPlan, type Habit } from '../lib/model';
 import { todayOf, useChara, useNow, useStore } from '../store';
 import { Logo, useFocusHeading } from '../components/common';
 import { Dialog } from '../components/Dialog';
 import { CharacterFace } from '../components/Character';
 import { IconCheck, IconChevronRight, IconClock, IconGear, IconPencil, IconPlay } from '../components/Icons';
 import { editHabit } from './HabitEditor';
+import { reviewHabit } from './Review';
 import { StorageNotice } from '../components/StorageNotice';
 
 const STATUS_LABEL: Record<Exclude<DayStatus, null>, string> = { done: 'やった', small: '小さな一手', rest: '休みの日' };
@@ -43,7 +45,8 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
     sessionActive: !!active,
     justMilestone: !!state.justMilestone,
   });
-  const reviewDue = list.length > 0 && settings.supportMode === 'plan' && isReviewDue(settings, meta, records, today);
+  const view = todayView(habits, records, today, active?.habitId ?? null);
+  const due = list.length > 0 ? habitsDueForReview(list, settings, meta, records, today) : [];
 
   return (
     <div className="screen home v7">
@@ -115,11 +118,34 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
         <Onboarding navigate={navigate} />
       ) : (
         <>
-          <ul className="habit-list" aria-label="習慣">
-            {list.map((h) => (
-              <HabitCard key={h.id} habit={h} today={today} navigate={navigate} onCoping={() => setCoping(h)} />
-            ))}
-          </ul>
+          {(
+            [
+              ['todo', '今日やること', view.todo],
+              ['unplanned', '予定のない習慣', view.unplanned],
+              ['done', '今日の記録済み', view.done],
+            ] as const
+          ).map(([key, title, items]) =>
+            items.length === 0 ? (
+              key === 'todo' && view.done.length > 0 ? (
+                <p key={key} className="all-done">
+                  <IconCheck size={18} />
+                  今日の予定はすべて記録しました。
+                </p>
+              ) : null
+            ) : (
+              <section key={key} className={`habit-group is-${key}`} aria-labelledby={`g-${key}`}>
+                <h2 id={`g-${key}`} className="group-title">
+                  {title}
+                  <span className="group-count">{items.length}</span>
+                </h2>
+                <ul className="habit-list">
+                  {items.map((it) => (
+                    <HabitCard key={it.habit.id} item={it} today={today} navigate={navigate} onCoping={() => setCoping(it.habit)} />
+                  ))}
+                </ul>
+              </section>
+            ),
+          )}
           {list.length < MAX_HABITS && (
             <button type="button" className="btn btn-ghost add-habit" onClick={() => { editHabit(null); navigate('/habit'); }}>
               ＋ 習慣を追加
@@ -128,21 +154,24 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
         </>
       )}
 
-      {reviewDue && <ReviewRow navigate={navigate} />}
+      {due.length > 0 && <ReviewRow habits={due} navigate={navigate} />}
       <CopingDialog habit={coping} today={today} onClose={() => setCoping(null)} navigate={navigate} />
     </div>
   );
 }
 
-function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; today: string; navigate: (r: string) => void; onCoping: () => void }) {
+function HabitCard({ item, today, navigate, onCoping }: { item: HabitToday; today: string; navigate: (r: string) => void; onCoping: () => void }) {
   const { state, actions } = useStore();
   const [busy, setBusy] = useState(false);
-  const st = dayStatus(h.id, state.records, today);
-  const planned = isPlannedDay(h, today);
+  const h = item.habit;
+  const st = item.status;
+  const planned = item.planned;
   const total = habitTotal(h, state.records);
-  const mine = state.records.filter((r) => r.habitId === h.id && isDone(r));
-  const last = mine.reduce<string | null>((m, r) => (!m || r.studyDate > m ? r.studyDate : m), null);
-  const resume = !st && !!last && dayDiff(last, today) >= RESUME_GAP_DAYS;
+  const resume = item.resume;
+  const restPrompt = shouldPromptRest(item.rest, state.meta.restPromptDismissed[h.id]);
+  const compact = item.group === 'done' && h.trackingType === 'days';
+  const time = h.trackingType === 'time';
+  const firstCoping: CopingPlan = h.copingPlans[0] ?? { when: '時間がない・気が重い', instead: defaultSmall(h).label, minutes: time ? defaultSmall(h).minutes : null };
   const flash = state.justBookmarked === h.id || state.justMilestone?.habitId === h.id;
   const isActive = state.active?.habitId === h.id;
   const todayRec = state.records.find((r) => r.habitId === h.id && r.studyDate === today);
@@ -164,11 +193,11 @@ function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; toda
   const showCue = state.settings.supportMode === 'plan' && !!h.cue;
   const headingId = `hc-${h.id}`;
   return (
-    <li className={`habit-card c-${h.color}${st ? ` is-${st}` : ''}${flash ? ' is-new' : ''}`} aria-labelledby={headingId}>
+    <li className={`habit-card c-${h.color}${st ? ` is-${st}` : ''}${flash ? ' is-new' : ''}${compact ? ' is-compact' : ''}`} aria-labelledby={headingId}>
       <div className="hc-head">
-        <h2 id={headingId} className="hc-name">
+        <h3 id={headingId} className="hc-name">
           {h.name}
-        </h2>
+        </h3>
         <span className={`hc-status${st ? ' is-on' : ''}`}>
           {st && st !== 'rest' && <IconCheck size={14} />}
           {statusText}
@@ -179,8 +208,26 @@ function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; toda
         <span className="num">{formatTotal(total)}</span>
         {h.trackingType === 'time' && h.baseline && <span className="hc-sub">（{formatJpDate(BASELINE.asOf)}までの確認済みを含む）</span>}
       </p>
-      {resume && <p className="hc-resume">また、ここから。{h.nextAction ? 'しおりは残っています。' : ''}</p>}
-      {(showCue || h.nextAction) && (
+      {restPrompt && item.rest && (
+        <div className="hc-rest" role="group" aria-labelledby={`${headingId}-rest`}>
+          <p id={`${headingId}-rest`} className="hc-panel-title">
+            休むと決めた日が{item.rest.count}日続いています
+          </p>
+          <p className="hc-panel-text">休むのは悪いことではありません。今の予定が合っているか、見直してみませんか？</p>
+          <div className="row-actions">
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => { editHabit(h.id, 'days'); navigate('/habit'); }}>
+              予定の曜日を見直す
+            </button>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => { editHabit(h.id, 'small'); navigate('/habit'); }}>
+              一手を小さくする
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => item.rest && run(() => actions.dismissRestPrompt(h.id, item.rest!))}>
+              このままでいい
+            </button>
+          </div>
+        </div>
+      )}
+      {!compact && (showCue || h.nextAction) && (
         <dl className="hc-plan">
           {showCue && (
             <div>
@@ -196,6 +243,59 @@ function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; toda
           )}
         </dl>
       )}
+      {resume && !isActive ? (
+        <div className="hc-resume" role="group" aria-labelledby={`${headingId}-resume`}>
+          <p id={`${headingId}-resume`} className="hc-panel-title">
+            また、ここから。
+          </p>
+          <p className="hc-panel-text">
+            最後の記録：{formatShortDate(resume.lastDate)}
+            {h.nextAction ? '。しおりは残っています。' : '。'}
+          </p>
+          <ul className="choices">
+            <li>
+              <button type="button" className="choice is-main" disabled={busy || (time && !!state.active)}
+                onClick={() => run(() => (time ? actions.startSession(h.id, { kind: 'standard' }) : actions.markDone(h.id)))}>
+                <span className="choice-main">
+                  <span className="choice-name">{time ? (h.nextAction ? 'しおりから始める' : '始める') : 'やった'}</span>
+                  <span className="choice-desc">{h.nextAction || (time ? '内容は終わったときに残せます' : h.name)}</span>
+                </span>
+                {time ? <IconPlay size={18} /> : <IconCheck size={18} />}
+              </button>
+            </li>
+            <li>
+              <button type="button" className="choice" disabled={busy || (time && !!state.active)}
+                onClick={() => run(() => (time ? actions.startSession(h.id, { kind: 'small', coping: firstCoping }) : actions.markDone(h.id, { small: firstCoping })))}>
+                <span className="choice-main">
+                  <span className="choice-name">{time ? '小さな一手で始める' : '小さな一手でやった'}</span>
+                  <span className="choice-desc">
+                    {firstCoping.instead}
+                    {time && firstCoping.minutes ? `（${firstCoping.minutes}分）` : ''}
+                  </span>
+                </span>
+                <IconClock size={18} />
+              </button>
+            </li>
+            <li>
+              <button type="button" className="choice" onClick={() => { editHabit(h.id); navigate('/habit'); }}>
+                <span className="choice-main">
+                  <span className="choice-name">プランを見直す</span>
+                  <span className="choice-desc">きっかけ・一手の大きさ・曜日</span>
+                </span>
+                <IconChevronRight size={18} />
+              </button>
+            </li>
+          </ul>
+          <div className="hc-actions">
+            <button type="button" className="link-btn" onClick={onCoping}>
+              ほかの小さな一手・今日は休む
+            </button>
+            <button type="button" className="icon-btn hc-edit" aria-label={`${h.name}を編集`} onClick={() => { editHabit(h.id); navigate('/habit'); }}>
+              <IconPencil size={18} />
+            </button>
+          </div>
+        </div>
+      ) : (
       <div className="hc-actions">
         {h.trackingType === 'time' ? (
           isActive ? (
@@ -248,6 +348,7 @@ function HabitCard({ habit: h, today, navigate, onCoping }: { habit: Habit; toda
           <IconPencil size={18} />
         </button>
       </div>
+      )}
     </li>
   );
 }
@@ -408,7 +509,7 @@ function Onboarding({ navigate }: { navigate: (r: string) => void }) {
   );
 }
 
-function ReviewRow({ navigate }: { navigate: (r: string) => void }) {
+function ReviewRow({ habits, navigate }: { habits: Habit[]; navigate: (r: string) => void }) {
   const { actions } = useStore();
   return (
     <section className="review-row" aria-labelledby="review-row-title">
@@ -416,16 +517,18 @@ function ReviewRow({ navigate }: { navigate: (r: string) => void }) {
         <h2 id="review-row-title" className="review-row-title">
           週の見直し（1分）
         </h2>
-        <p className="help">この7日間の事実を見て、来週ひとつだけ変えます。</p>
+        <p className="help">
+          {habits.map((h) => h.name).join('・')}：この7日間の事実を見て、来週ひとつだけ変えます。
+        </p>
       </div>
       <div className="review-row-actions">
-        <button type="button" className="btn btn-outline btn-sm" onClick={() => navigate('/review')}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={() => { reviewHabit(habits[0].id); navigate('/review'); }}>
           見直す
         </button>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={() => actions.snoozeReview().catch(() => actions.toast('保存できませんでした。', { tone: 'error' }))}
+          onClick={() => actions.snoozeReview(habits.map((h) => h.id)).catch(() => actions.toast('保存できませんでした。', { tone: 'error' }))}
         >
           今週はしない
         </button>

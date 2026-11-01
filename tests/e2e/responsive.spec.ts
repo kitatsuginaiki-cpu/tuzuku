@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { card, gotoStack, noHorizontalOverflow, open, setup } from './helpers';
+import { card, closeToasts, gotoStack, noHorizontalOverflow, open, setup } from './helpers';
 
 const WIDTHS = [320, 375, 390, 430, 768, 1024, 1440];
 const LONG = '問題集の第11章「決算整理仕訳」の練習問題を最後まで解いて、間違えたところを解説で確認する';
@@ -105,4 +105,57 @@ test.describe('レスポンシブ（7幅）', () => {
     const anim = await page.locator('.buddy .chara').evaluate((el) => getComputedStyle(el).animationName);
     expect(anim).toBe('none');
   });
+});
+
+test.describe('通知が操作ボタンに重ならない（v7.2）', () => {
+  for (const w of [320, 390, 768, 1024, 1440]) {
+    test(`${w}px：通知の位置に、押せるボタン・リンクがない`, async ({ page }) => {
+      await page.setViewportSize({ width: w, height: w >= 1024 ? 900 : 760 });
+      await open(page);
+      await setup(page, ['morning', 'boki', 'reading', 'room', 'note']);
+      /** 通知が「バー」の中に収まっている（スマホ）か、本文の操作と重ならない（PC）こと */
+      const check = async (label: string) => {
+        const toast = page.locator('.toast').last();
+        await expect(toast).toBeVisible();
+        const t = (await toast.boundingBox())!;
+        const bar = page.locator('.bottomnav:visible, .topbar:visible').first();
+        if (w < 1024 && (await bar.count())) {
+          const b = (await bar.boundingBox())!;
+          expect(t.y, `${label}: 通知がバーより上にはみ出す`).toBeGreaterThanOrEqual(b.y - 1);
+          expect(t.y + t.height, `${label}: 通知がバーより下にはみ出す`).toBeLessThanOrEqual(b.y + b.height + 1);
+          return;
+        }
+        const hits = await page.evaluate((t) => {
+          const out: string[] = [];
+          for (const el of document.querySelectorAll<HTMLElement>('button, a[href], [role="radio"], input, select, textarea')) {
+            if (el.closest('.toasts') || el.closest('dialog:not([open])')) continue;
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0 || r.bottom <= 0 || r.top >= innerHeight) continue;
+            const overlap = !(r.right <= t.x || r.left >= t.x + t.width || r.bottom <= t.y || r.top >= t.y + t.height);
+            if (overlap) out.push((el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 30));
+          }
+          return out;
+        }, t);
+        expect(hits, `${label}: 通知と重なる操作`).toEqual([]);
+      };
+      // 今日：やった → 通知（取り消すつき）
+      await card(page, '読書').getByRole('button', { name: 'やった', exact: true }).click();
+      await check('今日（先頭）');
+      await closeToasts(page);
+      // 下までスクロールした状態でも
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await card(page, 'note更新').getByRole('button', { name: 'やった', exact: true }).click();
+      await check('今日（下までスクロール）');
+      await closeToasts(page);
+      // 記録画面で手入力
+      await page.goto('/#records');
+      await page.locator('.habit-pick').getByRole('radio', { name: '簿記3級' }).click();
+      await page.getByRole('button', { name: '計測しなかった時間を記録する' }).click();
+      await page.locator('#rec-date').fill('2026-10-30');
+      await page.locator('#rec-min').fill('20');
+      await page.locator('#rec-title').fill('講義');
+      await page.getByRole('button', { name: '記録する', exact: true }).click();
+      await check('記録');
+    });
+  }
 });

@@ -199,13 +199,16 @@ function InfoAside({ navigate }: { navigate: (r: string) => void }) {
   );
 }
 
+/**
+ * 通知は1件ずつ（バーの位置に出すため）。大事な知らせ（節目など）があればそれを優先し、
+ * なければ最新の1件。表示中のものが消えると、残っているものが続けて出る。
+ */
 function Toasts() {
   const { toasts, actions } = useStore();
+  const shown = [...toasts].reverse().find((t) => t.priority === 'high') ?? toasts[toasts.length - 1];
   return (
     <div className="toasts" aria-live="polite" aria-atomic="false">
-      {toasts.map((t) => (
-        <ToastItem key={t.id} t={t} onDone={() => actions.dismissToast(t.id)} />
-      ))}
+      {shown && <ToastItem key={shown.id} t={shown} onDone={() => actions.dismissToast(shown.id)} />}
     </div>
   );
 }
