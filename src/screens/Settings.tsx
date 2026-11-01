@@ -18,6 +18,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
   const [legacy, setLegacy] = useState<LegacyCandidates | null>(null);
   const [legacyFound, setLegacyFound] = useState<Record<string, unknown> | null>(null);
   const [resetStep, setResetStep] = useState<0 | 1>(0);
+  const [undoOpen, setUndoOpen] = useState(false);
   const [copyText, setCopyText] = useState<string | null>(null);
   // 切り替えは即座に画面へ反映し、保存に失敗したら元に戻す
   const [support, setSupport] = useState(state.settings.supportMode);
@@ -70,6 +71,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+    void actions.markBackup();
     actions.toast(`バックアップを書き出しました（記録${state.records.length}件）。`);
   }
 
@@ -102,7 +104,10 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
     try {
       navigator.clipboard
         .writeText(text)
-        .then(() => actions.toast(`バックアップをコピーしました（記録${state.records.length}件）。メモ等に貼り付けて保管できます。`))
+        .then(() => {
+          void actions.markBackup();
+          actions.toast(`バックアップをコピーしました（記録${state.records.length}件）。メモ等に貼り付けて保管できます。`);
+        })
         .catch(fallback);
     } catch {
       fallback();
@@ -156,10 +161,13 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
           {v === 'indexeddb' && 'この端末のブラウザ内（IndexedDB）に保存しています。'}
           {v === 'localStorage' && 'この端末のブラウザ内（localStorage）に保存しています。'}
           {v === 'memory' && 'このブラウザでは保存領域を使えません。画面を閉じると記録は消えます。プライベートブラウズを解除するか、別のブラウザでお使いください。'}
-          {v !== 'memory' &&
-            (state.account
-              ? ' ログイン中のため、PCとスマホのあいだで自動で同期しています。'
-              : ' ログインしない限り、PCとスマホのデータは同期されません（「仲間」タブからログインできます）。ブラウザのデータ削除で消えることがあるため、ときどきバックアップを書き出してください。')}
+          {v !== 'memory' && ' PCとスマホのあいだの同期は、安全確認のため止めています。ブラウザのデータ削除で消えることがあるため、ときどきバックアップを書き出してください。'}
+        </p>
+        <p className="backup-status">
+          最後のバックアップ：
+          {state.meta.lastBackupAt
+            ? new Date(state.meta.lastBackupAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'まだありません'}
         </p>
         <div className="btn-row">
           <button type="button" className="btn btn-outline" onClick={exportJson}>
@@ -177,6 +185,18 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
           <button type="button" className="btn btn-quiet" onClick={() => { setPasteText(''); setPasteOpen(true); }}>貼り付けて復元</button>
         </div>
         <p className="help">ファイルを保存できない環境では「コピー」と「貼り付けて復元」を使えます（例：PCでコピー → 自分宛てのメモで送る → スマホで貼り付け）。以前の試作版（v3.1）のバックアップにも対応しています。</p>
+
+        {state.lastSnapshot && (
+          <div className="legacy-box">
+            <p className="dialog-text">
+              {new Date(state.lastSnapshot.at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}の
+              {state.lastSnapshot.reason === 'reset' ? '消去' : '復元'}の直前の状態（習慣{state.lastSnapshot.habits.length}件・記録{state.lastSnapshot.records.length}件）が、この端末に1つ残っています。
+            </p>
+            <button type="button" className="btn btn-outline" onClick={() => setUndoOpen(true)}>
+              直前の状態に戻す
+            </button>
+          </div>
+        )}
 
         {state.v6Backup && (
           <div className="legacy-box">
@@ -214,8 +234,11 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
         <h2 id="s-about" className="section-title">このアプリについて</h2>
         <ul className="about-list">
           <li>確認済みの累計：{formatJpDate('2026-10-07')}時点で17時間36分（1,056分）。この期間の個別の記録はありません。</li>
-          <li>広告・解析ツールはありません。ログインは任意で、仲間と同期を使うときだけ必要です。</li>
+          <li>広告・解析ツールはありません。記録はこの端末にだけ保存しています（同期は安全確認のため停止中）。</li>
           <li>ホーム画面に追加すると、オフラインでも起動できます。</li>
+          <li>
+            バージョン：<span className="num">{__APP_VERSION__}</span>
+          </li>
         </ul>
         {installEvt && (
           <button type="button" className="btn btn-outline" onClick={async () => { await installEvt.prompt(); setInstallEvt(null); }}>
@@ -226,7 +249,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
 
       <section className="settings-block danger-zone" aria-labelledby="s-reset">
         <h2 id="s-reset" className="section-title">記録の消去</h2>
-        <p className="help">この端末の習慣・記録・設定をすべて消去します。{state.account ? 'ログイン中のため、同期先の記録も消えます。' : ''}確認済みの累計17時間36分は、簿記の習慣を作り直すと再び土台になります。</p>
+        <p className="help">この端末の習慣・記録・設定を消去します。ほかの端末やサーバーのデータは消しません。消去の直前の状態は1つだけこの端末に残り、「直前の状態に戻す」で戻せます。確認済みの累計17時間36分は、簿記の習慣を作り直すと再び土台になります。</p>
         <button type="button" className="btn btn-danger-ghost" onClick={() => setResetStep(1)} disabled={!!state.active}>
           記録と設定を消去…
         </button>
@@ -256,6 +279,24 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
         </form>
       </Dialog>
 
+      <Dialog open={undoOpen && !!state.lastSnapshot} onClose={() => setUndoOpen(false)} title="直前の状態に戻しますか？" role="alertdialog"
+        description={state.lastSnapshot ? `現在の習慣${state.habits.length}件・記録${state.records.length}件が、習慣${state.lastSnapshot.habits.length}件・記録${state.lastSnapshot.records.length}件に置き換わります。今の状態も、また1つ前の状態として残ります。` : ''}>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => setUndoOpen(false)} data-autofocus>やめる</button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={async () => {
+            const snap = state.lastSnapshot;
+            if (!snap) return;
+            try {
+              await actions.replaceAll({ habits: snap.habits, settings: snap.settings, records: snap.records, reviews: snap.reviews }, 'restore');
+              setUndoOpen(false);
+              actions.toast(`直前の状態に戻しました（記録${snap.records.length}件）。`);
+            } catch {
+              actions.toast('戻せませんでした。現在のデータは変更されていません。', { tone: 'error' });
+            }
+          }}>戻す</button>
+        </div>
+      </Dialog>
+
       <RestoreDialog data={restore} onClose={() => setRestore(null)} onExport={exportJson} />
       <LegacyDialog data={legacy} onClose={() => setLegacy(null)} />
 
@@ -265,7 +306,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
           <button type="button" className="btn btn-outline" onClick={exportJson} data-autofocus>先にバックアップを書き出す</button>
           <button type="button" className="btn btn-danger" onClick={async () => {
             try {
-              await actions.replaceAll({ habits: [], settings: { ...DEFAULT_APP_SETTINGS }, records: [], reviews: [] });
+              await actions.replaceAll({ habits: [], settings: { ...DEFAULT_APP_SETTINGS }, records: [], reviews: [] }, 'reset');
               setResetStep(0);
               actions.toast('記録と設定を消去しました。');
               navigate('/');
@@ -296,7 +337,7 @@ function RestoreDialog({ data, onClose, onExport }: { data: ParsedBackup | null;
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
           setBusy(true);
           try {
-            await actions.replaceAll({ habits: data.habits, settings: data.settings, records: data.records, reviews: data.reviews });
+            await actions.replaceAll({ habits: data.habits, settings: data.settings, records: data.records, reviews: data.reviews }, 'restore');
             onClose();
             actions.toast(`復元しました（記録${data.records.length}件）。`);
           } catch {

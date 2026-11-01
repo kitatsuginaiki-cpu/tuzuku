@@ -441,3 +441,26 @@ describe('つづきぼしの成長（Lv.1〜5）', () => {
     expect(toSharedMood('angry')).toBe('angry');
   });
 });
+
+describe('学習時間の整合性（架空の加算をしない）', () => {
+  it('基準値は 1,056分（2026-10-07）で、簿記の習慣だけが持つ', () => {
+    expect(BASELINE).toEqual({ minutes: 1056, asOf: '2026-10-07' });
+    expect(habitTotal(boki(), [])).toMatchObject({ minutes: 1056, appMinutes: 0 });
+    expect(habitTotal(reading(), [])).toMatchObject({ days: 0 });
+  });
+  it('移行は、記録の件数と分数の合計を変えない（どんな入力でも）', () => {
+    for (let t = 0; t < 50; t++) {
+      const n = (t * 7) % 13;
+      const rs = Array.from({ length: n }, (_, i) => rec('', addDays('2026-10-08', i), { habitId: undefined, kind: undefined, minutes: 1 + ((i * 37 + t) % 90) }));
+      const m = migrateFromV6({ nextAction: 'x' }, rs);
+      expect(m.records).toHaveLength(n);
+      expect(m.records.reduce((s, r) => s + r.minutes, 0)).toBe(rs.reduce((s, r) => s + r.minutes, 0));
+      expect(habitTotal(m.habits[0], m.records)).toMatchObject({ minutes: 1056 + rs.reduce((s, r) => s + r.minutes, 0) });
+    }
+  });
+  it('記録0件で触っていない v6 は習慣を作らず、記録も作らない', () => {
+    const m = migrateFromV6({}, []);
+    expect(m.habits).toEqual([]);
+    expect(m.records).toEqual([]);
+  });
+});

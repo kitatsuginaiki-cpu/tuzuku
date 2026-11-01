@@ -202,9 +202,9 @@ test.describe('アカウント', () => {
     await expect(card(p, '読書').getByText('今日はやった')).toBeVisible();
   });
 
-  test('接続先が未設定の公開版では、仲間タブは説明だけを出し、記録はそのまま使える', async ({ page }) => {
+  test('同期が止まっている版では、仲間タブは説明だけを出し、記録はそのまま使える', async ({ page }) => {
     await page.goto('/#friends');
-    await expect(page.getByRole('heading', { name: 'この公開版では、共有の接続先がまだ設定されていません' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '仲間と同期は、安全確認のため一時停止中です' })).toBeVisible();
     await page.getByRole('button', { name: '共有されるもの・されないもの（プライバシー）' }).click();
     await expect(page.getByRole('heading', { name: 'データの扱い' })).toBeVisible();
     await expect(page.getByText('既定はオフ')).toBeVisible();

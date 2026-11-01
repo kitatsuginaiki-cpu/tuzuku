@@ -148,8 +148,21 @@ declare global {
 
 let cached: Remote | null = null;
 
+/**
+ * 同期・仲間の機能スイッチ。
+ * 本物の Supabase と実機での検証が終わるまで、本番では止めておく（端末1台で安全に使うため）。
+ * - 有効にするには VITE_SYNC_ENABLED=true でビルドする。
+ * - E2E テストでは、偽サーバー（window.__tsuzukuRemote）を差し込んだときだけ有効になる。
+ * 無効のときはサーバーへの通信を一切しない（送信待ちも作らない）。
+ */
+export function syncEnabled(): boolean {
+  if (typeof window !== 'undefined' && window.__tsuzukuRemote) return true;
+  return import.meta.env.VITE_SYNC_ENABLED === 'true';
+}
+
 export async function getRemote(): Promise<Remote> {
   if (cached) return cached;
+  if (!syncEnabled()) return (cached = unavailable);
   if (typeof window !== 'undefined' && window.__tsuzukuRemote) return (cached = window.__tsuzukuRemote);
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;

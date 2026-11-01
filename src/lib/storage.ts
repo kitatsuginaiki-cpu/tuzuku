@@ -42,6 +42,31 @@ export interface LoadedData {
   migratedFromV6: boolean;
   /** 移行前の v6 データ（書き出し用。移行していなければ null） */
   v6Backup: { settings: unknown; records: StudyRecord[] } | null;
+  /** 消去・復元の直前の状態（1つだけ保持。元に戻す用） */
+  lastSnapshot: Snapshot | null;
+}
+
+export interface Snapshot {
+  at: string;
+  reason: 'reset' | 'restore';
+  habits: Habit[];
+  settings: AppSettings;
+  records: StudyRecord[];
+  reviews: Review[];
+}
+
+export function sanitizeSnapshot(raw: unknown): Snapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.at !== 'string' || Number.isNaN(Date.parse(r.at))) return null;
+  return {
+    at: r.at,
+    reason: r.reason === 'restore' ? 'restore' : 'reset',
+    habits: sanitizeHabits(r.habits),
+    settings: sanitizeAppSettings(r.settings),
+    records: cleanRecords(Array.isArray(r.records) ? r.records : []),
+    reviews: sanitizeReviews(r.reviews),
+  };
 }
 
 export type Op =
@@ -209,7 +234,7 @@ function cleanRecords(raw: unknown[]): StudyRecord[] {
   return out;
 }
 
-const KV_KEYS = ['habits', 'appSettings', 'settings', 'active', 'meta', 'reviews', 'account', 'v6Backup'];
+const KV_KEYS = ['habits', 'appSettings', 'settings', 'active', 'meta', 'reviews', 'account', 'v6Backup', 'lastSnapshot'];
 
 export class Repository {
   constructor(private store: Store) {}
@@ -254,6 +279,7 @@ export class Repository {
       account: sanitizeAccount(kv.account),
       migratedFromV6,
       v6Backup,
+      lastSnapshot: sanitizeSnapshot(kv.lastSnapshot),
     };
   }
 

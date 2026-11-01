@@ -22,6 +22,8 @@ export interface Meta {
   openedDays: string[];
   /** v7.1：お祝い済みの成長段階（同じ段階を二度祝わない） */
   levelShown: number;
+  /** v7.1.1：最後にバックアップを書き出した（またはコピーした）日時 */
+  lastBackupAt: string | null;
 }
 
 export const DEFAULT_META: Meta = Object.freeze({
@@ -31,6 +33,7 @@ export const DEFAULT_META: Meta = Object.freeze({
   milestonesShown: {},
   openedDays: [],
   levelShown: 1,
+  lastBackupAt: null,
 }) as Meta;
 
 export type ReviewChange = 'cue' | 'action' | 'small' | 'days' | 'none';
@@ -74,6 +77,7 @@ export function sanitizeMeta(raw: unknown): Meta {
     reviewSnoozedOn: d(r.reviewSnoozedOn),
     milestonesShown: ms,
     openedDays: opened,
+    lastBackupAt: typeof r.lastBackupAt === 'string' && !Number.isNaN(Date.parse(r.lastBackupAt)) ? r.lastBackupAt : null,
     levelShown: typeof r.levelShown === 'number' && Number.isInteger(r.levelShown) && r.levelShown >= 1 && r.levelShown <= 5 ? r.levelShown : 1,
   };
 }

@@ -3078,3 +3078,34 @@ a {
 .mood-gallery li {
   min-width: 64px;
 }
+
+/* v7.1.1：保存の警告 */
+.notice {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #f3f6fa;
+  border: 1px solid #c9d6e3;
+}
+.notice p {
+  margin-top: 4px;
+  font-size: 0.9375rem;
+}
+.notice .btn {
+  margin-top: 8px;
+}
+.notice-title {
+  font-size: 1rem;
+  font-weight: 800;
+}
+.notice.is-danger {
+  background: #fff4f2;
+  border-color: #e6b3aa;
+}
+.notice.is-danger .notice-title {
+  color: var(--danger-text);
+}
+.backup-status {
+  margin: 8px 0;
+  font-weight: 700;
+}

@@ -12,6 +12,7 @@ import { Dialog } from '../components/Dialog';
 import { CharacterFace } from '../components/Character';
 import { IconCheck, IconChevronRight, IconClock, IconGear, IconPencil, IconPlay } from '../components/Icons';
 import { editHabit } from './HabitEditor';
+import { StorageNotice } from '../components/StorageNotice';
 
 const STATUS_LABEL: Record<Exclude<DayStatus, null>, string> = { done: 'やった', small: '小さな一手', rest: '休みの日' };
 
@@ -56,6 +57,7 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
         今日
       </h1>
       <p className="today-line">{formatShortDate(today)}</p>
+      <StorageNotice navigate={navigate} />
 
       {settings.characterEnabled && list.length > 0 && (
         <section className={`buddy is-${mood.mood}`} aria-label={`${CHARACTER_NAME}のようす`}>

@@ -26,8 +26,9 @@ import {
 } from './lib/model';
 import { crossedMilestone, habitTotal } from './lib/accumulate';
 import { accessoryAvailable, growthOf, type CharaAccessory } from './lib/character';
-import { openRepository, requestPersistence, type AccountState, type Op, type Repository, type StorageKind, type SyncKind } from './lib/storage';
+import { openRepository, requestPersistence, type AccountState, type Op, type Repository, type Snapshot, type StorageKind, type SyncKind } from './lib/storage';
 import { SyncEngine, type SyncStatus } from './lib/sync';
+import { syncEnabled } from './lib/remote';
 
 export interface Toast {
   id: number;
@@ -55,6 +56,7 @@ export interface State {
   levelUp: number | null;
   migratedFromV6: boolean;
   v6Backup: { settings: unknown; records: StudyRecord[] } | null;
+  lastSnapshot: Snapshot | null;
   sync: SyncStatus;
 }
 
@@ -92,11 +94,14 @@ interface Actions {
   updateSettings(patch: Partial<AppSettings>): Promise<void>;
   saveRecord(record: StudyRecord): Promise<void>;
   deleteRecord(id: string, opts?: { quiet?: boolean }): Promise<void>;
-  replaceAll(data: { habits: Habit[]; settings: AppSettings; records: StudyRecord[]; reviews: Review[] }): Promise<void>;
+  /** 消去・復元（この端末だけ）。直前の状態を1つ自動で保存し、元に戻せるようにする */
+  replaceAll(data: { habits: Habit[]; settings: AppSettings; records: StudyRecord[]; reviews: Review[] }, reason: 'reset' | 'restore'): Promise<void>;
   addRecords(records: StudyRecord[], habitPatch?: { habitId: string; nextAction?: string; cue?: string }): Promise<number>;
   saveReview(input: ReviewInput): Promise<void>;
   snoozeReview(): Promise<void>;
   setAccount(account: AccountState | null): Promise<void>;
+  /** バックアップを書き出した・コピーしたことを記録する */
+  markBackup(): Promise<void>;
   syncNow(): Promise<void>;
   toast(message: string, opts?: { tone?: Toast['tone']; action?: Toast['action'] }): void;
   dismissToast(id: number): void;
@@ -143,6 +148,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
     levelUp: null,
     migratedFromV6: false,
     v6Backup: null,
+    lastSnapshot: null,
     sync: { status: 'off', lastSyncedAt: null, error: null },
   });
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -168,7 +174,8 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
   /** ローカルに書き込み（ログイン中は同期待ちにも積む）→ 他タブへ通知 → 同期を予約 */
   const commit = useCallback(async (ops: Op[], changes: { kind: SyncKind; id: string; payload: unknown | null; updatedAt?: string }[] = []) => {
     const all = [...ops];
-    if (stateRef.current.account) {
+    // 送信待ちに積むのは、同期が有効でログインしているときだけ
+    if (stateRef.current.account && syncEnabled()) {
       for (const c of changes) {
         const updatedAt = c.updatedAt ?? new Date().toISOString();
         all.push({ t: 'out', item: { key: `${c.kind}:${c.id}`, kind: c.kind, id: c.id, payload: c.payload, updatedAt } });
@@ -215,6 +222,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
       if (data.migratedFromV6) toast('複数の習慣に対応しました。これまでの記録は「簿記3級」に引き継いでいます。');
       if (r.kind !== 'memory') void requestPersistence();
       // 同期エンジン（ログイン中のみ動く）
+      if (!syncEnabled()) return; // 同期が止まっている間は、エンジンを動かさない（通信しない）
       sync.current = new SyncEngine({
         repo: r,
         getState: () => stateRef.current,
@@ -525,25 +533,27 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           },
         });
       },
-      async replaceAll(data) {
-        const s = stateRef.current;
+      async replaceAll(data, reason) {
+        const cur = stateRef.current;
+        const snapshot: Snapshot = {
+          at: new Date().toISOString(),
+          reason,
+          habits: cur.habits,
+          settings: cur.settings,
+          records: cur.records,
+          reviews: cur.reviews,
+        };
         const ops: Op[] = [
+          { t: 'kv', key: 'lastSnapshot', value: snapshot },
           { t: 'recClear' },
           ...data.records.map((r) => ({ t: 'rec' as const, value: r })),
           { t: 'kv', key: 'habits', value: data.habits },
           { t: 'kv', key: 'appSettings', value: data.settings },
           { t: 'kv', key: 'reviews', value: data.reviews },
         ];
-        const now = new Date().toISOString();
-        const changes = [
-          ...s.records.filter((r) => !data.records.some((x) => x.id === r.id)).map((r) => ({ kind: 'record' as const, id: r.id, payload: null })),
-          ...s.habits.filter((h) => !data.habits.some((x) => x.id === h.id)).map((h) => ({ kind: 'habit' as const, id: h.id, payload: null })),
-          ...data.records.map((r) => ({ kind: 'record' as const, id: r.id, payload: r, updatedAt: now })),
-          ...data.habits.map((h) => ({ kind: 'habit' as const, id: h.id, payload: h, updatedAt: now })),
-          { kind: 'settings' as const, id: 'app', payload: data.settings, updatedAt: now },
-        ];
-        await commit(ops, changes);
-        setState((x) => ({ ...x, habits: data.habits, settings: data.settings, records: data.records, reviews: data.reviews }));
+        // 消去・復元はこの端末だけの操作。サーバーへは削除を送らない（他の端末のデータを消さない）
+        await commit(ops);
+        setState((x) => ({ ...x, habits: data.habits, settings: data.settings, records: data.records, reviews: data.reviews, lastSnapshot: snapshot }));
       },
       async addRecords(list, habitPatch) {
         const s = stateRef.current;
@@ -593,6 +603,11 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
         const meta: Meta = { ...stateRef.current.meta, reviewSnoozedOn: todayOf(stateRef.current.settings) };
         await commit([{ t: 'kv', key: 'meta', value: meta }]);
         setState((x) => ({ ...x, meta }));
+      },
+      async markBackup() {
+        const meta: Meta = { ...stateRef.current.meta, lastBackupAt: new Date().toISOString() };
+        setState((x) => ({ ...x, meta }));
+        await repo.current!.write([{ t: 'kv', key: 'meta', value: meta }]).catch(() => undefined);
       },
       async setAccount(account) {
         const ops: Op[] = [account ? { t: 'kv', key: 'account', value: account } : { t: 'kvDel', key: 'account' }];

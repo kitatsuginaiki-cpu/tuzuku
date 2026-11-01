@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { execSync } from 'node:child_process';
 
 /**
  * ビルド後に dist/ の全ファイルを列挙し、プリキャッシュ一覧とバージョンを埋め込んだ sw.js を生成する。
@@ -39,7 +40,22 @@ function serviceWorkerPlugin(): Plugin {
   };
 }
 
+/** 設定画面に出すバージョン：package.json の version ＋ commit（実機テストで、どの版か確かめるため） */
+function appVersion() {
+  const v = JSON.parse(readFileSync('package.json', 'utf8')).version as string;
+  let sha = (process.env.GITHUB_SHA ?? '').slice(0, 7);
+  if (!sha) {
+    try {
+      sha = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    } catch {
+      sha = '';
+    }
+  }
+  return sha ? `${v} (${sha})` : v;
+}
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion()) },
   // 相対パスにして GitHub Pages 等のサブパス配信でも動くようにする
   base: './',
   plugins: [react(), serviceWorkerPlugin()],

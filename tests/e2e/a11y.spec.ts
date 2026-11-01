@@ -114,3 +114,35 @@ test('axe：進化のお祝い・成長の段階', async ({ page }) => {
   await gotoStack(page);
   await audit(page, '成長の段階');
 });
+
+test('axe：保存の警告（保存できない／iPhone の Safari）・直前の状態に戻す', async ({ page, browser }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'indexedDB', { get: () => undefined, configurable: true });
+    Storage.prototype.setItem = () => {
+      throw new DOMException('blocked', 'SecurityError');
+    };
+  });
+  await open(page);
+  await expect(page.getByText('記録が保存されていません')).toBeVisible();
+  await audit(page, '保存できない警告');
+
+  const ctx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  });
+  const ios = await ctx.newPage();
+  await ios.goto('/');
+  await expect(ios.getByText('ホーム画面に追加して使ってください')).toBeVisible();
+  await audit(ios, 'iPhone の案内');
+  await ios.locator('.ob-item').first().click();
+  await ios.getByRole('button', { name: /つの習慣ではじめる/ }).click();
+  await expect(ios.locator('.habit-card')).toHaveCount(1);
+  await ios.goto('/#options');
+  await ios.getByRole('button', { name: '記録と設定を消去…' }).click();
+  await ios.getByRole('button', { name: '消去する' }).click();
+  await expect(ios.locator('.home')).toBeVisible();
+  await ios.goto('/#options');
+  await expect(ios.getByRole('button', { name: '直前の状態に戻す' })).toBeVisible();
+  await audit(ios, '設定（直前の状態あり）');
+  await ctx.close();
+});

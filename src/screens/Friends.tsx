@@ -60,14 +60,16 @@ export function Friends({ navigate }: { navigate: (r: string) => void }) {
 }
 
 function NotConfigured({ navigate }: { navigate: (r: string) => void }) {
+  const { state } = useStore();
   return (
     <section className="panel" aria-labelledby="nc-title">
       <h2 id="nc-title" className="h2">
-        この公開版では、共有の接続先がまだ設定されていません
+        仲間と同期は、安全確認のため一時停止中です
       </h2>
       <p>
-        記録はこの端末に保存され、今まで通り使えます。共有と端末間の同期を使うには、管理者がサーバー（Supabase）の接続先を設定する必要があります。
+        記録はこの端末に保存され、今まで通り使えます。サーバーへの送信・受信は行いません。PCとスマホのデータを合わせる仕組みを安全に作り直してから、再開します。
       </p>
+      {state.account && <p className="help">以前ログインしていても、同期は止まっています。この端末のデータはそのまま残ります。</p>}
       <button type="button" className="btn btn-outline btn-sm" onClick={() => navigate('/privacy')}>
         しくみを見る
       </button>
