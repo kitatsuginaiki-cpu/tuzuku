@@ -11,5 +11,6 @@ su postgres -s /bin/bash -c "$PGBIN/initdb -D $DIR/data -U postgres -E UTF8 --lo
 su postgres -s /bin/bash -c "$PGBIN/pg_ctl -D $DIR/data -o '-p $PORT -k $DIR' -l $DIR/log -w start >/dev/null"
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 for f in supabase/tests/auth_stub.sql supabase/migrations/0001_tsuzuku_v7.sql supabase/tests/rls_test.sql; do
-  su postgres -s /bin/bash -c "psql -h $DIR -p $PORT -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f $ROOT/$f" 
+  # postgres ユーザーから作業フォルダが読めない環境（CI など）でも動くよう、標準入力で渡す
+  su postgres -s /bin/bash -c "psql -h $DIR -p $PORT -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f -" < "$ROOT/$f"
 done
