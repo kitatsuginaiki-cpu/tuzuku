@@ -69,17 +69,13 @@ SQL Editor を開き、[`supabase/migrations/0001_tsuzuku_v7.sql`](supabase/migr
 - Authentication → URL Configuration の Site URL に、公開 URL（例：`https://kitatsuginaiki-cpu.github.io/tuzuku/`）を入れます。
 - 無料プランの組み込みメールは送信数に制限があります。人数が増えたら Auth → SMTP Settings で自前の SMTP を設定してください。
 
-**4. 接続先をアプリに渡す**
-Project Settings → API の **Project URL** と **anon public** キーを、GitHub リポジトリの Settings → Secrets and variables → Actions に登録します。
+**4. 接続先をアプリに渡す**（このリポジトリでは設定済み）
+Project URL と **anon public** キーは [`.env.production`](.env.production) に書いてあります。ビルドするとアプリに組み込まれます。どちらもブラウザに配られる前提の公開してよい値で、権限はすべてサーバー側の RLS が決めます。
+別のプロジェクトに切り替えるときは、このファイルを書き換えます。GitHub の Secrets（`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`）を設定した場合は、そちらが優先されます。
 
-| 名前 | 値 |
-|---|---|
-| `VITE_SUPABASE_URL` | `https://xxxx.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | anon public キー |
+> ⚠️ **service_role キーは絶対に書かない・登録しない・送らないでください。** これは RLS を無視して全データを読み書きできる鍵です。
 
-> ⚠️ **service_role キーは絶対に登録しないでください。** これは全データを読み書きできる鍵です。anon キーは公開されても問題ありません。権限はすべてサーバー側の RLS が決めます。
-
-ローカルで試すときは `.env.example` を `.env.local` にコピーして値を入れます（`.env*` はコミットされません）。
+E2E テストは `--mode e2e` でビルドします。この場合 `.env.production` を読まないので、テストが本番のサーバーに触れることはありません。
 
 **5. 公開する**
 `main` に push するか、Actions の「Deploy to GitHub Pages」を手動で実行します。これで「仲間」タブにログイン画面が出ます。
