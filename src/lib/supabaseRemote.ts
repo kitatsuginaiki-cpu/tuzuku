@@ -12,9 +12,36 @@ function toError(e: unknown): RemoteError {
   if (/group_full/.test(msg)) return new RemoteError('このグループは定員（8人）に達しています。', 'full');
   if (/too_many_groups/.test(msg)) return new RemoteError('参加できるグループは5つまでです。', 'limit');
   if (/not_found/.test(msg)) return new RemoteError('招待コードが見つかりません。もう一度確かめてください。', 'not_found');
-  if (/JWT|auth|Auth|token/i.test(msg)) return new RemoteError('ログインの有効期限が切れました。もう一度ログインしてください。', 'auth');
+  if (/JWT|jwt expired|refresh_token|invalid claim/i.test(msg)) return new RemoteError('ログインの有効期限が切れました。もう一度ログインしてください。', 'auth');
   if (/fetch|network|Failed to fetch/i.test(msg)) return new RemoteError('通信できませんでした。電波のよいところでもう一度お試しください。', 'network');
   return new RemoteError('うまくいきませんでした。時間をおいてもう一度お試しください。', 'unknown');
+}
+
+/**
+ * コード送信の失敗を、設定の直し方が分かる文言にする。
+ * どれにも当てはまらないときは、原因を調べられるようサーバーの文言も添える。
+ */
+export function sendCodeError(e: unknown): RemoteError {
+  const err = (e ?? {}) as { message?: string; code?: string; status?: number };
+  const msg = err.message ?? String(e);
+  const code = err.code ?? '';
+  const t = `${code} ${msg}`;
+  if (/not_authorized|not authorized/i.test(t))
+    return new RemoteError(
+      'このメールアドレスには送れません。Supabase 標準のメール送信は、プロジェクトのチームメンバー宛てにしか送れません（別の送信サービス〈SMTP〉の設定が必要です）。',
+      'auth',
+    );
+  if (/rate_limit|rate limit|too many|seconds/i.test(t) || err.status === 429)
+    return new RemoteError('送信の上限に達しました。少し時間をおいてから、もう一度コードを送ってください（標準のメール送信は1時間に2通まで）。', 'limit');
+  if (/signup_disabled|signups? not allowed|signup.*disabled/i.test(t))
+    return new RemoteError('新しいユーザーの登録がオフになっています（Supabase：Authentication → Sign In / Providers → Allow new users to sign up）。', 'auth');
+  if (/provider_disabled|otp_disabled|logins are disabled|provider is not enabled/i.test(t))
+    return new RemoteError('メールでのログインが無効になっています（Supabase：Authentication → Sign In / Providers → Email）。', 'auth');
+  if (/sending|smtp|unexpected_failure/i.test(t))
+    return new RemoteError(`メールを送れませんでした。Supabase のメール送信（SMTP）の設定を確認してください。（詳細：${msg}）`, 'unknown');
+  if (/invalid.*email|validate email|email_address_invalid/i.test(t)) return new RemoteError('メールアドレスを確かめてください。', 'auth');
+  if (/fetch|network/i.test(t)) return new RemoteError('通信できませんでした。電波のよいところでもう一度お試しください。', 'network');
+  return new RemoteError(`コードを送れませんでした。（詳細：${code ? `${code} / ` : ''}${msg.slice(0, 160)}）`, 'unknown');
 }
 
 async function must<T>(p: PromiseLike<{ data: T; error: unknown }>): Promise<T> {
@@ -44,10 +71,7 @@ export function createSupabaseRemote(url: string, anonKey: string): Remote {
     },
     async sendCode(email) {
       const { error } = await sb.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
-      if (error) {
-        if (/rate|seconds/i.test(error.message)) throw new RemoteError('少し時間をおいてから、もう一度コードを送ってください。', 'limit');
-        throw toError(error);
-      }
+      if (error) throw sendCodeError(error);
     },
     async verifyCode(email, code) {
       const { data, error } = await sb.auth.verifyOtp({ email, token: code.trim(), type: 'email' });

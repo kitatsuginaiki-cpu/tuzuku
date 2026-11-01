@@ -380,3 +380,16 @@ describe('blank habit', () => {
     expect(h).toMatchObject({ trackingType: 'days', planDays: [0, 1, 2, 3, 4, 5, 6], shared: false, baseline: false, order: 3 });
   });
 });
+
+describe('sendCodeError (Supabase のコード送信エラーの文言)', async () => {
+  const { sendCodeError } = await import('../../src/lib/supabaseRemote');
+  it('maps known Supabase auth errors to actionable Japanese messages', () => {
+    expect(sendCodeError({ code: 'email_address_not_authorized', message: 'Email address "a@b.c" cannot be used as it is not authorized' }).message).toMatch(/チームメンバー/);
+    expect(sendCodeError({ code: 'over_email_send_rate_limit', message: 'email rate limit exceeded', status: 429 }).message).toMatch(/上限/);
+    expect(sendCodeError({ code: 'signup_disabled', message: 'Signups not allowed for otp' }).message).toMatch(/登録がオフ/);
+    expect(sendCodeError({ code: 'email_provider_disabled', message: 'Email logins are disabled' }).message).toMatch(/メールでのログインが無効/);
+    expect(sendCodeError({ code: 'unexpected_failure', message: 'Error sending magic link email' }).message).toMatch(/SMTP/);
+    expect(sendCodeError(new TypeError('Failed to fetch')).message).toMatch(/通信/);
+    expect(sendCodeError({ message: 'something new' }).message).toContain('something new');
+  });
+});
