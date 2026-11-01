@@ -25,6 +25,7 @@ import {
   type Habit,
 } from './lib/model';
 import { crossedMilestone, habitTotal } from './lib/accumulate';
+import { accessoryAvailable, growthOf, type CharaAccessory } from './lib/character';
 import { openRepository, requestPersistence, type AccountState, type Op, type Repository, type StorageKind, type SyncKind } from './lib/storage';
 import { SyncEngine, type SyncStatus } from './lib/sync';
 
@@ -50,6 +51,8 @@ export interface State {
   justBookmarked: string | null;
   /** 直前に到達した節目 */
   justMilestone: { habitId: string; value: number } | null;
+  /** つづきぼしが進化した（お祝いを出す段階） */
+  levelUp: number | null;
   migratedFromV6: boolean;
   v6Backup: { settings: unknown; records: StudyRecord[] } | null;
   sync: SyncStatus;
@@ -99,6 +102,7 @@ interface Actions {
   dismissToast(id: number): void;
   clearRecovered(): void;
   clearFlash(): void;
+  clearLevelUp(): void;
 }
 
 const Ctx = createContext<{ state: State; actions: Actions; toasts: Toast[] } | null>(null);
@@ -136,6 +140,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
     recovered: false,
     justBookmarked: null,
     justMilestone: null,
+    levelUp: null,
     migratedFromV6: false,
     v6Backup: null,
     sync: { status: 'off', lastSyncedAt: null, error: null },
@@ -604,11 +609,24 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
       clearRecovered() {
         setState((s) => ({ ...s, recovered: false }));
       },
+      clearLevelUp() {
+        setState((s) => (s.levelUp ? { ...s, levelUp: null } : s));
+      },
       clearFlash() {
         setState((s) => (s.justBookmarked || s.justMilestone ? { ...s, justBookmarked: null, justMilestone: null } : s));
       },
     };
   }, [checkMilestone, commit, commitActive, dismissToast, navigate, toast]);
+
+  // つづきぼしの進化：記録が増えて段階が上がったら一度だけお祝いする（下がっても記録はそのまま）
+  useEffect(() => {
+    if (state.phase !== 'ready' || !repo.current) return;
+    const lv = growthOf(state.records).level.level;
+    if (lv <= state.meta.levelShown) return;
+    const meta = { ...state.meta, levelShown: lv };
+    setState((x) => ({ ...x, meta, levelUp: x.settings.characterEnabled ? lv : null }));
+    repo.current.write([{ t: 'kv', key: 'meta', value: meta }]).catch(() => undefined);
+  }, [state.phase, state.records, state.meta]);
 
   const actionsRef = useRef<Actions | null>(null);
   actionsRef.current = actions;
@@ -643,4 +661,16 @@ export function useNow(enabled = true): number {
     };
   }, [enabled]);
   return now;
+}
+
+/** つづきぼしの今の見た目（成長段階・色・使えるアクセサリー） */
+export function useChara() {
+  const { state } = useStore();
+  const g = growthOf(state.records);
+  const milestones = Object.values(state.meta.milestonesShown).reduce((n, v) => n + v.length, 0);
+  const today = todayOf(state.settings);
+  const acc: CharaAccessory = accessoryAvailable(state.settings.charaAccessory, { today, level: g.level.level, milestones }).ok
+    ? state.settings.charaAccessory
+    : 'none';
+  return { growth: g, level: g.level.level, color: state.settings.charaColor, accessory: acc, milestones, today, enabled: state.settings.characterEnabled };
 }

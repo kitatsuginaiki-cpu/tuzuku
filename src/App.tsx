@@ -14,6 +14,7 @@ import { Settings } from './screens/Settings';
 import { Stack } from './screens/Stack';
 import { Friends } from './screens/Friends';
 import { Privacy } from './screens/Privacy';
+import { LevelUpDialog } from './components/LevelUp';
 
 type Route = '/' | '/stack' | '/friends' | '/records' | '/settings' | '/session' | '/habit' | '/review' | '/privacy';
 
@@ -119,6 +120,7 @@ function Shell({ route, navigate }: { route: Route; navigate: (r: string) => voi
       {page === 'home' && <InfoAside navigate={navigate} />}
       {!flow && <BottomNav route={route} navigate={navigate} />}
       <Toasts />
+      {!(flow && active?.status === 'running') && <LevelUpDialog />}
     </div>
   );
 }

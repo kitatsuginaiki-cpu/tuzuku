@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { AWAY_NOTICE_MS, LIMITS } from '../lib/config';
 import { formatClock, formatClockTime, spokenDuration } from '../lib/dates';
 import { elapsedMs, isOverTarget, progressRatio, remainingMs, type ActiveSession } from '../lib/session';
-import { useNow, useStore } from '../store';
+import { useChara, useNow, useStore } from '../store';
+import { CharacterFace } from '../components/Character';
 import { Dialog } from '../components/Dialog';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
 import { IconCheck, IconPause, IconPlay, IconStop } from '../components/Icons';
@@ -11,6 +12,7 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
   const { state, actions } = useStore();
   const habit = state.habits.find((h) => h.id === active.habitId);
   const habitTarget = habit?.targetMinutes ?? 20;
+  const chara = useChara();
   const now = useNow(active.status === 'running');
   const [interrupt, setInterrupt] = useState(false);
   const [targetOpen, setTargetOpen] = useState(false);
@@ -72,6 +74,13 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
             {active.title || '内容は終了時に入力できます'}
           </h1>
         </div>
+
+        {chara.enabled && (
+          <div className="session-buddy">
+            <CharacterFace mood={paused ? 'rest' : 'focus'} level={chara.level} color={chara.color} accessory={chara.accessory} size={92} />
+            <p className="session-buddy-line">{paused ? 'ひと休み。戻ったら、また一緒に。' : '集中タイム。そばにいるよ。'}</p>
+          </div>
+        )}
 
         <div className={`timer${paused ? ' is-paused' : ''}`}>
           <p

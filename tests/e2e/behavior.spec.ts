@@ -106,7 +106,7 @@ test.describe('積み上げ：減らない・節目', () => {
     await open(page);
     await setup(page, ['boki']);
     await gotoStack(page);
-    await expect(page.locator('.stack-total')).toHaveText('17時間36分');
+    await expect(page.locator('.stack-total.num')).toHaveText('17時間36分');
     await expect(page.locator('.blocks')).toHaveAttribute('aria-label', /30分のブロックが35個。うち35個は確認済みの累計（土台）。端数6分。/);
     await expect(page.locator('.block.is-base')).toHaveCount(35 + 1); // 凡例の1つを含む
     await expect(page.getByText(/次の節目 25時間 まで あと7時間24分/)).toBeVisible();
@@ -115,7 +115,7 @@ test.describe('積み上げ：減らない・節目', () => {
     await addManual(page, { date: '2026-10-31', minutes: 444, title: 'まとめて演習' });
     await expect(page.getByText('節目：簿記3級 が 25時間 に到達しました。')).toBeVisible();
     await gotoStack(page);
-    await expect(page.locator('.stack-total')).toHaveText('25時間0分');
+    await expect(page.locator('.stack-total.num')).toHaveText('25時間0分');
     await expect(page.getByText('到達した節目：25時間')).toBeVisible();
     await expect(page.getByText(/次の節目 50時間/)).toBeVisible();
 
@@ -138,7 +138,7 @@ test.describe('積み上げ：減らない・節目', () => {
     await addPastDay(page, '2026-10-21', '小さな一手');
     await closeToasts(page);
     await gotoStack(page);
-    await expect(page.locator('.stack-total')).toHaveText('2日');
+    await expect(page.locator('.stack-total.num')).toHaveText('2日');
     await expect(page.locator('.tile.is-done')).toHaveCount(1 + 1); // 凡例を含む
     await expect(page.locator('.tile.is-small')).toHaveCount(1 + 1);
     await expect(page.getByText(/次の節目 10日 まで あと8日/)).toBeVisible();
@@ -168,11 +168,11 @@ test.describe('キャラクター「つづ」', () => {
     const p = await startedAWeekAgo(page, ['reading']);
     const buddy = p.locator('.buddy');
     await expect(buddy).toHaveClass(/is-worried/);
-    await expect(buddy.getByRole('img', { name: 'つづ：心配そう' })).toBeVisible();
+    await expect(buddy.getByRole('img', { name: /^つづきぼし Lv\.1（はじまり）：心配そう$/ })).toBeVisible();
     await expect(buddy.getByText('予定の日に6日、記録がありません')).toBeVisible();
     await card(p, READ).getByRole('button', { name: 'やった', exact: true }).click();
     await expect(buddy).toHaveClass(/is-happy/);
-    await expect(buddy.getByRole('img', { name: 'つづ：嬉しそう' })).toBeVisible();
+    await expect(buddy.getByRole('img', { name: /つづきぼし.*：嬉しそう/ })).toBeVisible();
   });
 
   test('きびしい：3日以上あくと怒る。小さな一手でもすぐ嬉しそうに戻る（再開を罰しない）', async ({ page }) => {
@@ -207,10 +207,77 @@ test.describe('キャラクター「つづ」', () => {
     await expect(buddy.getByText('今日は予定のない日です')).toBeVisible();
   });
 
-  test('設定画面で5つの表情を確認できる', async ({ page }) => {
+  test('設定画面で表情を確認できる', async ({ page }) => {
     await open(page, '/#options');
     const g = page.getByRole('list', { name: '表情の一覧' });
-    for (const l of ['嬉しそう', 'いつもどおり', '待っている', '心配そう', '怒っている']) await expect(g.getByText(l)).toBeVisible();
+    for (const l of ['嬉しそう', '集中している', 'やる気十分', '待っている', 'おやすみ中', '心配そう', '怒っている']) await expect(g.getByText(l)).toBeVisible();
+  });
+
+  test('計測中は集中、休むと決めた日はおやすみの顔', async ({ page }) => {
+    await open(page);
+    await setup(page, ['boki', 'reading']);
+    await card(page, BOKI).getByRole('button', { name: 'しおりから始める' }).click();
+    await expect(page.locator('.session-buddy').getByRole('img', { name: /集中している/ })).toBeVisible();
+    await page.getByRole('button', { name: '一時停止' }).click();
+    await expect(page.locator('.session-buddy').getByRole('img', { name: /おやすみ中/ })).toBeVisible();
+    await page.getByRole('button', { name: '再開' }).click();
+    await page.getByRole('button', { name: 'ホームに戻る（計測は続きます）' }).click();
+    await expect(page.locator('.buddy')).toHaveClass(/is-focus/);
+  });
+});
+
+test.describe('つづきぼしの進化', () => {
+  test('つづけた日が3日になると Lv.2 に進化し、お祝いは一度だけ。段階は積み上げ画面で見られる', async ({ page }) => {
+    await open(page);
+    await setup(page, ['reading']);
+    const buddy = page.locator('.buddy');
+    await expect(buddy.locator('.lv-badge')).toHaveText('Lv.1 はじまり');
+    await expect(buddy.getByText('次の進化 Lv.2 まで あと3日')).toBeVisible();
+    await gotoRecords(page);
+    await addPastDay(page, '2026-10-30');
+    await addPastDay(page, '2026-10-31');
+    await expect(page.getByRole('dialog', { name: /レベルアップ/ })).toHaveCount(0); // まだ2日
+    await gotoToday(page);
+    await expect(buddy.getByText('次の進化 Lv.2 まで あと1日')).toBeVisible();
+    await card(page, READ).getByRole('button', { name: 'やった', exact: true }).click();
+    const dlg = page.getByRole('dialog', { name: 'レベルアップ！ Lv.2 ならし' });
+    await expect(dlg).toBeVisible();
+    await expect(dlg.getByText('少しずつ習慣のリズムができてきた。')).toBeVisible();
+    await expect(dlg.getByText(/つづけた日 3日/)).toBeVisible();
+    await dlg.getByRole('button', { name: 'やったね！' }).click();
+    await expect(dlg).toBeHidden();
+    await expect(buddy.locator('.lv-badge')).toHaveText('Lv.2 ならし');
+    await expect(buddy.getByRole('img', { name: /Lv\.2（ならし）/ })).toBeVisible();
+    // 取り消して戻しても、同じ段階は二度祝わない
+    await closeToasts(page);
+    await card(page, READ).getByRole('button', { name: '取り消す' }).click();
+    await card(page, READ).getByRole('button', { name: 'やった', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: /レベルアップ/ })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('dialog', { name: /レベルアップ/ })).toHaveCount(0);
+
+    await gotoStack(page);
+    const evo = page.getByRole('list', { name: '成長の段階' });
+    await expect(evo.getByRole('img', { name: 'Lv.2 ならし（到達）' })).toBeVisible();
+    await expect(evo.getByRole('img', { name: 'Lv.3 かたち（つづけた日 10日で解放）' })).toBeVisible();
+    await expect(page.getByText('次の進化 Lv.3 かたち まで あと7日')).toBeVisible();
+  });
+
+  test('色を変えられ、学びの帽子は節目に届くと手に入る', async ({ page }) => {
+    await open(page);
+    await setup(page, ['boki']);
+    await page.goto('/#options');
+    await page.getByRole('radio', { name: /ブルー/ }).click();
+    await expect(page.getByRole('radio', { name: /ブルー/ })).toHaveAttribute('aria-checked', 'true');
+    const cap = page.getByRole('radio', { name: /学びの帽子/ });
+    await expect(cap).toBeDisabled();
+    await expect(page.getByRole('radio', { name: /マフラー/ })).toBeDisabled(); // 11月は使えない
+    await gotoRecords(page);
+    await addManual(page, { date: '2026-10-31', minutes: 444, title: 'まとめて演習' }); // 25時間の節目
+    await page.goto('/#options');
+    await expect(cap).toBeEnabled();
+    await cap.click();
+    await expect(cap).toHaveAttribute('aria-checked', 'true');
   });
 });
 

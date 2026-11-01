@@ -20,6 +20,8 @@ export interface Meta {
   milestonesShown: Record<string, number[]>;
   /** v7：アプリを開いた日（検証用。最大180日分） */
   openedDays: string[];
+  /** v7.1：お祝い済みの成長段階（同じ段階を二度祝わない） */
+  levelShown: number;
 }
 
 export const DEFAULT_META: Meta = Object.freeze({
@@ -28,6 +30,7 @@ export const DEFAULT_META: Meta = Object.freeze({
   reviewSnoozedOn: null,
   milestonesShown: {},
   openedDays: [],
+  levelShown: 1,
 }) as Meta;
 
 export type ReviewChange = 'cue' | 'action' | 'small' | 'days' | 'none';
@@ -71,6 +74,7 @@ export function sanitizeMeta(raw: unknown): Meta {
     reviewSnoozedOn: d(r.reviewSnoozedOn),
     milestonesShown: ms,
     openedDays: opened,
+    levelShown: typeof r.levelShown === 'number' && Number.isInteger(r.levelShown) && r.levelShown >= 1 && r.levelShown <= 5 ? r.levelShown : 1,
   };
 }
 

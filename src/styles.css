@@ -2850,3 +2850,231 @@ a {
 .status.is-small .status-today {
   color: var(--accent-text);
 }
+
+/* ===================================================================== */
+/* v7.1：つづきぼし（成長・進化）                                          */
+/* ===================================================================== */
+.buddy {
+  align-items: center;
+  padding: 10px 16px 12px 6px;
+}
+.buddy-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: #4f5d6a;
+}
+.lv-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: #fff4d6;
+  color: #7a5a12;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border: 1px solid #f0d89a;
+}
+.buddy-line {
+  margin-top: 2px;
+}
+.buddy-grow {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.buddy-grow-text {
+  font-size: 0.8125rem;
+  color: #4f5d6a;
+  font-weight: 700;
+}
+.grow-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: #ebe6d6;
+  overflow: hidden;
+}
+.grow-bar > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8db66a, #e7b93f);
+  transform-origin: left;
+  border-radius: 999px;
+}
+.session-buddy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 -4px;
+}
+.session-buddy-line {
+  font-weight: 700;
+  color: #4f5d6a;
+  font-size: 0.9375rem;
+}
+.finish-buddy {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+/* 成長の段階 */
+.growth {
+  background: linear-gradient(180deg, #fffdf5, var(--surface));
+}
+.evo {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+.evo-step {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 2px;
+  padding: 8px 2px;
+  border-radius: 12px;
+  text-align: center;
+}
+.evo-step .chara {
+  width: 100%;
+  height: auto;
+  max-width: 92px;
+}
+.evo-step.is-current {
+  background: #fff4d6;
+  box-shadow: inset 0 0 0 1.5px #f0d89a;
+}
+.evo-name {
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.evo-days {
+  font-size: 0.6875rem;
+  color: #4f5d6a;
+  line-height: 1.4;
+}
+.evo-step:not(.is-reached) .evo-name {
+  color: #4f5d6a;
+}
+@media (max-width: 480px) {
+  .evo {
+    grid-template-columns: repeat(5, minmax(56px, 1fr));
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .evo-step.is-reached:not(.is-current) .evo-days {
+    display: none;
+  }
+}
+
+/* 進化の瞬間 */
+.levelup {
+  text-align: center;
+}
+.levelup-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 4px auto 8px;
+}
+.levelup-stage .chara {
+  position: relative;
+  z-index: 1;
+}
+.burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px;
+  background: #e7b93f;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .levelup-stage .chara {
+    animation: lv-pop 0.8s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  }
+  .burst {
+    animation: lv-burst 1.4s ease-out 0.25s both;
+  }
+  .b1 {
+    --dx: -110px;
+    --dy: -60px;
+  }
+  .b2 {
+    --dx: 110px;
+    --dy: -70px;
+    animation-delay: 0.35s;
+  }
+  .b3 {
+    --dx: -90px;
+    --dy: 60px;
+    animation-delay: 0.45s;
+  }
+  .b4 {
+    --dx: 100px;
+    --dy: 50px;
+    animation-delay: 0.55s;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .burst {
+    display: none;
+  }
+}
+@keyframes lv-pop {
+  0% {
+    transform: scale(0.6) translateY(16px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes lv-burst {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1.3);
+  }
+}
+.levelup-desc {
+  font-size: 1.0625rem;
+  font-weight: 800;
+}
+.levelup-fact {
+  margin-top: 6px;
+}
+.levelup .dialog-actions {
+  justify-content: center;
+}
+.chara-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 6px;
+}
+.acc-notes {
+  margin-top: 6px;
+  display: grid;
+  gap: 2px;
+}
+.mood-gallery li {
+  min-width: 64px;
+}

@@ -4,7 +4,7 @@
  * 未設定なら unavailable（アプリはローカルだけで動く）。
  * テストでは window.__tsuzukuRemote に同じインターフェースの実装を差し込む。
  */
-import type { Mood } from './character';
+import type { SharedMood } from './character';
 import type { OutboxItem, SyncKind } from './storage';
 
 export interface RemoteUser {
@@ -31,7 +31,7 @@ export interface SharedStatus {
   weekDays: number;
   /** 積み上げ（時間型＝分、日数型＝日） */
   total: number;
-  mood: Mood | null;
+  mood: SharedMood | null;
   updatedAt: string;
 }
 

@@ -3,12 +3,13 @@
 // 表示内容はスクリーンショット用の一時データ（毎回新しいブラウザで作成）であり、実際の記録ではありません。
 // 「仲間」画面は、ブラウザ内だけで動く見本のサーバーを使います（見本のなかま＝架空の表示用データ）。
 import { chromium } from 'playwright';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:4173/';
 const OUT = 'docs/screenshots';
-rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
+// 画面のスクリーンショットだけ作り直す（character-evolution.png は scripts/character-sheet.tsx が作る）
+for (const f of readdirSync(OUT)) if (/^(mobile|desktop|mood)-|^character-moods/.test(f)) rmSync(`${OUT}/${f}`);
 const NOW = new Date('2026-11-01T13:10:00+09:00');
 const MIN = 60_000;
 const NAMES = { morning: '朝8:00に起きて作業に入る', boki: '簿記3級', reading: '読書', room: '部屋をきれいに保つ', note: 'note更新' };
@@ -80,7 +81,12 @@ for (const [w, h, tag] of [
   await pastDay(p, '2026-10-29');
   await pastDay(p, '2026-10-30', '小さな一手');
   await pastDay(p, '2026-10-31');
+  // つづけた日が3日になり、Lv.2 に進化する
   await p.goto(BASE + '#');
+  await p.getByRole('dialog', { name: /レベルアップ/ }).waitFor();
+  await p.waitForTimeout(1600);
+  await p.screenshot({ path: `${OUT}/${tag}-11-levelup.png`, animations: 'disabled' });
+  await p.getByRole('button', { name: 'やったね！' }).click();
   await card(p, NAMES.morning).getByRole('button', { name: 'やった', exact: true }).click();
   await shot(p, `${tag}-02-today`, tag === 'mobile');
   await card(p, NAMES.reading).getByRole('button', { name: 'できない日は' }).click();

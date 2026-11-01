@@ -6,7 +6,7 @@ import { elapsedMs } from '../lib/session';
 import { dayStatus, formatTotal, habitTotal, type DayStatus } from '../lib/accumulate';
 import { CHARACTER_NAME, lineFor, moodFor, MOOD_LABEL } from '../lib/character';
 import { HABIT_TEMPLATES, habitFromTemplate, isDone, MAX_HABITS, type CopingPlan, type Habit } from '../lib/model';
-import { todayOf, useNow, useStore } from '../store';
+import { todayOf, useChara, useNow, useStore } from '../store';
 import { Logo, useFocusHeading } from '../components/common';
 import { Dialog } from '../components/Dialog';
 import { CharacterFace } from '../components/Character';
@@ -23,6 +23,7 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
   const h1 = useFocusHeading<HTMLHeadingElement>();
   const list = habits.filter((h) => !h.archived).sort((a, b) => a.order - b.order);
   const [coping, setCoping] = useState<Habit | null>(null);
+  const chara = useChara();
 
   useEffect(() => {
     if (!state.justBookmarked && !state.justMilestone) return;
@@ -58,8 +59,14 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
 
       {settings.characterEnabled && list.length > 0 && (
         <section className={`buddy is-${mood.mood}`} aria-label={`${CHARACTER_NAME}のようす`}>
-          <CharacterFace mood={mood.mood} size={84} />
+          <CharacterFace mood={mood.mood} level={chara.level} color={chara.color} accessory={chara.accessory} size={124} />
           <div className="buddy-talk">
+            <p className="buddy-name">
+              {CHARACTER_NAME}
+              <span className="lv-badge">
+                Lv.{chara.level} {chara.growth.level.name}
+              </span>
+            </p>
             <p className="buddy-line">{lineFor(mood.mood, today)}</p>
             <p className="buddy-fact">
               <span className="sr-only">{MOOD_LABEL[mood.mood]}。</span>
@@ -71,6 +78,18 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
                     ? '今日は予定の日です'
                     : '今日は予定のない日です'}
             </p>
+            {chara.growth.next ? (
+              <div className="buddy-grow">
+                <span className="buddy-grow-text">
+                  次の進化 Lv.{chara.growth.next.level} まで あと<span className="num">{chara.growth.left}</span>日
+                </span>
+                <span className="grow-bar" aria-hidden="true">
+                  <span style={{ transform: `scaleX(${Math.max(0.04, chara.growth.ratio)})` }} />
+                </span>
+              </div>
+            ) : (
+              <p className="buddy-grow-text">いちばん輝く姿になりました（つづけた日 {chara.growth.days}日）</p>
+            )}
           </div>
         </section>
       )}

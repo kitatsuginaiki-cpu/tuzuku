@@ -2,7 +2,9 @@ import { BASELINE } from '../lib/config';
 import { formatJpDate, formatShortDate, localDate, parseLocalDate } from '../lib/dates';
 import { calendar, formatHM, formatTotal, habitTotal, toBlocks, totalValue, type Total } from '../lib/accumulate';
 import type { AppSettings, Habit } from '../lib/model';
-import { todayOf, useStore } from '../store';
+import { todayOf, useChara, useStore } from '../store';
+import { CHARACTER_NAME, LEVELS } from '../lib/character';
+import { CharacterFace } from '../components/Character';
 import { Logo, useFocusHeading } from '../components/common';
 import { IconGear } from '../components/Icons';
 
@@ -43,6 +45,7 @@ export function Stack({ navigate }: { navigate: (r: string) => void }) {
         </h1>
         <p className="lead">途切れても、積み上げは減りません。</p>
       </section>
+      {state.settings.characterEnabled && <Growth />}
       {list.length === 0 && <p className="empty">習慣を追加すると、ここに積み上がっていきます。</p>}
       {list.map((h) => (
         <StackCard key={h.id} habit={h} today={today} />
@@ -60,6 +63,58 @@ export function Stack({ navigate }: { navigate: (r: string) => void }) {
         </details>
       )}
     </div>
+  );
+}
+
+function Growth() {
+  const chara = useChara();
+  const g = chara.growth;
+  return (
+    <section className="stack-card growth" aria-labelledby="growth-title">
+      <div className="stack-head">
+        <h2 id="growth-title" className="h2">
+          {CHARACTER_NAME}の成長
+        </h2>
+        <p className="stack-total growth-level">
+          Lv.{g.level.level} {g.level.name}
+        </p>
+      </div>
+      <p className="help">
+        つづけた日（やった・小さな一手の日。習慣をまたいで数えます）<strong className="num"> {g.days}日</strong>。間があいても下がりません。
+      </p>
+      <ol className="evo" aria-label="成長の段階">
+        {LEVELS.map((l) => {
+          const reached = g.level.level >= l.level;
+          return (
+            <li key={l.level} className={`evo-step${reached ? ' is-reached' : ''}${g.level.level === l.level ? ' is-current' : ''}`}>
+              <CharacterFace
+                mood={reached ? (g.level.level === l.level ? 'happy' : 'normal') : 'normal'}
+                level={l.level}
+                color={chara.color}
+                accessory={g.level.level === l.level ? chara.accessory : 'none'}
+                locked={!reached}
+                size={92}
+                label={reached ? `Lv.${l.level} ${l.name}（到達）` : `Lv.${l.level} ${l.name}（つづけた日 ${l.days}日で解放）`}
+              />
+              <span className="evo-name">
+                Lv.{l.level} {l.name}
+              </span>
+              <span className="evo-days">{reached ? l.desc : `${l.days}日で解放`}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {g.next && (
+        <div className="milestone">
+          <p className="milestone-text">
+            次の進化 <strong>Lv.{g.next.level} {g.next.name}</strong> まで あと<span className="num">{g.left}日</span>
+          </p>
+          <div className="progress" role="progressbar" aria-label="次の進化までの進み" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(g.ratio * 100)}>
+            <span className="progress-fill" style={{ transform: `scaleX(${g.ratio})` }} />
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

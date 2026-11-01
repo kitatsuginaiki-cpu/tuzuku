@@ -20,7 +20,7 @@ import {
   type Habit,
 } from '../../src/lib/model';
 import { calendar, crossedMilestone, dayStatus, formatTotal, habitTotal, toBlocks } from '../../src/lib/accumulate';
-import { CHARACTER_RULES, lineFor, MOOD_LINES, moodFor } from '../../src/lib/character';
+import { accessoryAvailable, CHARACTER_RULES, growthOf, LEVELS, lineFor, MOOD_LINES, moodFor, toSharedMood } from '../../src/lib/character';
 import { applyRemote, fullOutbox, sharedStatuses, SyncEngine } from '../../src/lib/sync';
 import { memoryRepository } from '../../src/lib/storage';
 import { DEFAULT_META } from '../../src/lib/plan';
@@ -181,7 +181,7 @@ describe('character mood (rules, no AI)', () => {
 
   it('happy when done today, during a session, or right after a milestone', () => {
     expect(moodFor({ ...base, habits: [daily], records: [rec('read', today)] }).mood).toBe('happy');
-    expect(moodFor({ ...base, habits: [daily], records: [], sessionActive: true }).mood).toBe('happy');
+    expect(moodFor({ ...base, habits: [daily], records: [], sessionActive: true }).mood).toBe('focus');
     expect(moodFor({ ...base, habits: [daily], records: [], justMilestone: true }).mood).toBe('happy');
   });
   it('normal when yesterday was covered; waiting in the evening of a planned day', () => {
@@ -213,7 +213,7 @@ describe('character mood (rules, no AI)', () => {
     const strict = { ...base, settings: S({ strictness: 'strict' }), habits: [daily], records: three };
     expect(moodFor(strict).mood).toBe('angry');
     expect(moodFor({ ...strict, context: 'resume' }).mood).toBe('waiting');
-    expect(moodFor({ ...strict, sessionActive: true }).mood).toBe('happy');
+    expect(moodFor({ ...strict, sessionActive: true }).mood).toBe('focus');
     expect(moodFor({ ...strict, records: [...three, rec('read', today, { mode: 'small' })] }).mood).toBe('happy');
   });
   it('archived habits are ignored', () => {
@@ -391,5 +391,53 @@ describe('sendCodeError (Supabase のコード送信エラーの文言)', async 
     expect(sendCodeError({ code: 'unexpected_failure', message: 'Error sending magic link email' }).message).toMatch(/SMTP/);
     expect(sendCodeError(new TypeError('Failed to fetch')).message).toMatch(/通信/);
     expect(sendCodeError({ message: 'something new' }).message).toContain('something new');
+  });
+});
+
+describe('つづきぼしの成長（Lv.1〜5）', () => {
+  it('つづけた日（やった・小さな一手のある日、習慣をまたいで重複なし）で段階が決まる', () => {
+    const rs = [
+      rec('read', '2026-10-20'),
+      rec('boki', '2026-10-20', { minutes: 20 }), // 同じ日は1日
+      rec('read', '2026-10-21', { mode: 'small' }),
+      rec('read', '2026-10-22', { kind: 'rest' }), // 休みは数えない
+    ];
+    const g = growthOf(rs);
+    expect(g.days).toBe(2);
+    expect(g.level.level).toBe(1);
+    expect(g.next?.level).toBe(2);
+    expect(g.left).toBe(1);
+    const three = [...rs, rec('read', '2026-10-25')];
+    expect(growthOf(three).level).toMatchObject({ level: 2, name: 'ならし' });
+  });
+  it('段階のしきい値は 0・3・10・30・66 日、Lv.5 で次はない', () => {
+    expect(LEVELS.map((l) => l.days)).toEqual([0, 3, 10, 30, 66]);
+    const many = Array.from({ length: 70 }, (_, i) => rec('read', addDays('2026-08-01', i)));
+    const g = growthOf(many);
+    expect(g.level.level).toBe(5);
+    expect(g.next).toBeNull();
+    expect(g.ratio).toBe(1);
+    expect(growthOf(many.slice(0, 29)).level.level).toBe(3);
+    expect(growthOf(many.slice(0, 30)).level.level).toBe(4);
+  });
+  it('アクセサリー：マフラーは12〜2月、学びの帽子は Lv.3 か節目で手に入る', () => {
+    expect(accessoryAvailable('scarf', { today: '2026-12-01', level: 1, milestones: 0 }).ok).toBe(true);
+    expect(accessoryAvailable('scarf', { today: '2026-02-28', level: 1, milestones: 0 }).ok).toBe(true);
+    expect(accessoryAvailable('scarf', { today: '2026-11-01', level: 5, milestones: 3 }).ok).toBe(false);
+    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 2, milestones: 0 }).ok).toBe(false);
+    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 3, milestones: 0 }).ok).toBe(true);
+    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 1, milestones: 1 }).ok).toBe(true);
+  });
+  it('おやすみ：今日の予定の習慣をすべて休むと決めた日', () => {
+    const today = '2026-11-10';
+    const base = { settings: S(), today, hour: 10, firstUsedOn: '2026-10-01' };
+    expect(moodFor({ ...base, habits: [reading()], records: [rec('read', today, { kind: 'rest' })] }).mood).toBe('rest');
+    // 2つ予定があって片方だけ休み → おやすみにはしない
+    expect(moodFor({ ...base, habits: [reading(), { ...boki(), planDays: [0, 1, 2, 3, 4, 5, 6] }], records: [rec('read', today, { kind: 'rest' }), rec('boki', addDays(today, -1), { minutes: 5 })] }).mood).not.toBe('rest');
+  });
+  it('仲間に送る表情はサーバーの許可リストの5種類に丸める', () => {
+    expect(toSharedMood('focus')).toBe('happy');
+    expect(toSharedMood('rest')).toBe('normal');
+    expect(toSharedMood('angry')).toBe('angry');
   });
 });

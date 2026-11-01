@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { addManual, card, closeToasts, gotoFriends, gotoRecords, gotoStack, open, setup } from './helpers';
+import { addManual, addPastDay, card, closeToasts, gotoFriends, gotoRecords, gotoStack, gotoToday, open, setup } from './helpers';
 import { FakeBackend } from './fakeRemote';
 
 /** WCAG 2.0/2.1/2.2 A・AA のルールで自動監査（自動検査で分かる範囲のみ） */
@@ -98,4 +98,19 @@ test('axe：仲間（ログイン・グループ）', async ({ browser }) => {
   await audit(page, '仲間（グループ）');
   await page.getByRole('button', { name: 'アカウントを削除' }).click();
   await audit(page, 'アカウント削除ダイアログ');
+});
+
+test('axe：進化のお祝い・成長の段階', async ({ page }) => {
+  await open(page);
+  await setup(page, ['reading']);
+  await gotoRecords(page);
+  await addPastDay(page, '2026-10-30');
+  await addPastDay(page, '2026-10-31');
+  await gotoToday(page);
+  await card(page, '読書').getByRole('button', { name: 'やった', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: /レベルアップ/ })).toBeVisible();
+  await audit(page, '進化のお祝い');
+  await page.getByRole('button', { name: 'やったね！' }).click();
+  await gotoStack(page);
+  await audit(page, '成長の段階');
 });

@@ -6,7 +6,7 @@
  */
 import { addDays } from './dates';
 import { dayStatus, habitTotal, totalValue } from './accumulate';
-import { moodFor } from './character';
+import { moodFor, toSharedMood } from './character';
 import { logicalDate, sanitizeAppSettings, sanitizeHabit, type AppSettings, type Habit } from './model';
 import { normalizeRecord } from './backup';
 import { sanitizeReviews, type Meta, type Review } from './plan';
@@ -71,7 +71,7 @@ export function sharedStatuses(state: Pick<SyncState, 'habits' | 'records' | 'se
         todayDate: today,
         weekDays,
         total: totalValue(habitTotal(h, state.records)),
-        mood: state.settings.characterEnabled ? mood : null,
+        mood: state.settings.characterEnabled ? toSharedMood(mood) : null,
         updatedAt: iso,
       };
     });

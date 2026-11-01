@@ -3,7 +3,8 @@ import { LIMITS, LONG_SESSION_WARN_MINUTES } from '../lib/config';
 import { formatClockTime, formatMinutes } from '../lib/dates';
 import { elapsedMs, pausedTotalMs, suggestedMinutes, type ActiveSession } from '../lib/session';
 import { bookmarkSuggestions, looksVague } from '../lib/plan';
-import { useStore } from '../store';
+import { useChara, useStore } from '../store';
+import { CharacterFace } from '../components/Character';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
 import { IconAlert, IconCheck, IconPencil } from '../components/Icons';
 
@@ -14,6 +15,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
   const habit = state.habits.find((h) => h.id === active.habitId) ?? state.habits[0];
   const habitNext = habit?.nextAction ?? '';
   const habitCue = habit?.cue ?? '';
+  const chara = useChara();
   const end = active.completingAt ?? Date.now();
   const measured = suggestedMinutes(active, end);
   const tooShort = measured < 1;
@@ -81,9 +83,15 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
       <TopBar title="学習終了" onBack={saving ? undefined : actions.cancelFinish} backLabel="学習中の画面に戻る" />
       <form className="finish-form" onSubmit={save} noValidate>
         <div className="finish-body">
-          <span className="check-badge" aria-hidden="true">
-            <IconCheck size={24} />
-          </span>
+          {chara.enabled ? (
+            <div className="finish-buddy">
+              <CharacterFace mood="happy" level={chara.level} color={chara.color} accessory={chara.accessory} size={112} decorative />
+            </div>
+          ) : (
+            <span className="check-badge" aria-hidden="true">
+              <IconCheck size={24} />
+            </span>
+          )}
           <h1 className="h1 finish-h1" ref={h1} tabIndex={-1}>
             {habit ? `${habit.name}、おつかれさま。` : 'おつかれさま。'}
           </h1>
