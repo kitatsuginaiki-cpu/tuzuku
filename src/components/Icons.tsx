@@ -108,3 +108,10 @@ export const IconAlert = (p: P) => (
     <path d="M12 7.5v5.5M12 16.5v.01" />
   </Svg>
 );
+export const IconPlan = (p: P) => (
+  <Svg {...p}>
+    <circle cx="6" cy="6" r="2.2" />
+    <circle cx="6" cy="18" r="2.2" />
+    <path d="M6 8.2v7.6M10.5 6H20M10.5 18H20M10.5 12H17" />
+  </Svg>
+);

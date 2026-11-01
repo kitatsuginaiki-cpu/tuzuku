@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { noHorizontalOverflow, open } from './helpers';
 
+/** 未設定時は「学習を始める」、しおりがあるときは「この一手を始める」 */
+const START = /^(学習を始める|この一手を始める)$/;
+
 const WIDTHS = [320, 375, 390, 430, 768, 1024, 1440];
 const LONG = '問題集の第11章「決算整理仕訳」の練習問題を最後まで解いて、間違えたところを解説で確認する';
 
@@ -15,7 +18,7 @@ test.describe('レスポンシブ（7幅）', () => {
       await page.locator('#edit-text').fill(LONG.slice(0, 80));
       await page.getByRole('button', { name: '保存する' }).click();
       await noHorizontalOverflow(page);
-      await expect(page.getByRole('button', { name: '学習を始める' })).toBeInViewport();
+      await expect(page.getByRole('button', { name: START })).toBeInViewport();
       await page.screenshot({ path: info.outputPath(`home-${w}.png`), fullPage: true });
 
       // ナビゲーション：1024px 以上は左ナビ、未満は下部ナビ
@@ -38,7 +41,7 @@ test.describe('レスポンシブ（7幅）', () => {
       await noHorizontalOverflow(page);
 
       await page.goto('/#');
-      await page.getByRole('button', { name: '学習を始める' }).click();
+      await page.getByRole('button', { name: START }).click();
       await expect(page.locator('.session')).toBeVisible();
       await noHorizontalOverflow(page);
       await expect(page.getByRole('button', { name: '学習を終える' })).toBeVisible();
@@ -61,7 +64,7 @@ test.describe('レスポンシブ（7幅）', () => {
     }
     const tab = await page.locator('.tab').first().boundingBox();
     expect(tab!.height).toBeGreaterThanOrEqual(44);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     for (const name of ['一時停止', '中断', '学習を終える', 'ホームに戻る（計測は続きます）']) {
       const b = await page.getByRole('button', { name }).boundingBox();
       expect(b!.height, name).toBeGreaterThanOrEqual(44);
@@ -73,7 +76,7 @@ test.describe('レスポンシブ（7幅）', () => {
     await page.addStyleTag({ content: 'html{font-size:200%!important}' });
     await noHorizontalOverflow(page);
     await page.screenshot({ path: info.outputPath('home-text200.png'), fullPage: true });
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.addStyleTag({ content: 'html{font-size:200%!important}' });
     await noHorizontalOverflow(page);
     await expect(page.getByRole('button', { name: '学習を終える' })).toBeVisible();

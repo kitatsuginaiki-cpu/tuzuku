@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { LIMITS, LONG_SESSION_WARN_MINUTES } from '../lib/config';
 import { formatClockTime, formatMinutes } from '../lib/dates';
 import { elapsedMs, pausedTotalMs, suggestedMinutes, type ActiveSession } from '../lib/session';
+import { bookmarkSuggestions, looksVague } from '../lib/plan';
 import { useStore } from '../store';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
 import { IconAlert, IconCheck, IconPencil } from '../components/Icons';
@@ -18,7 +19,10 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
   const [minutes, setMinutes] = useState(tooShort ? '' : String(Math.min(measured, LIMITS.minutesMax)));
   const [editingTime, setEditingTime] = useState(tooShort || tooLong);
   const [title, setTitle] = useState(active.title);
-  const [next, setNext] = useState('');
+  // 小さな一手のあとは、しおり（まだ終えていない一手）をそのまま残しておく
+  const keepBookmark = active.mode === 'small' && !!state.settings.nextAction;
+  const [next, setNext] = useState(keepBookmark ? state.settings.nextAction : '');
+  const [cueFollowed, setCueFollowed] = useState<'yes' | 'no' | null>(null);
   const [errors, setErrors] = useState<{ minutes?: string; title?: string; next?: string }>({});
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const inFlight = useRef(false);
@@ -26,6 +30,8 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
   const minutesRef = useRef<HTMLInputElement>(null);
 
   const fallbackTitle = state.settings.subject ? `${state.settings.subject}の学習` : '学習';
+  const suggestions = bookmarkSuggestions(title, next);
+  const askCue = state.settings.supportMode === 'plan' && !!state.settings.cue;
   const minutesNum = Number(minutes);
   const pausedMin = Math.floor(pausedTotalMs(active, end) / 60000);
 
@@ -53,7 +59,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
     inFlight.current = true;
     setSaveState('saving');
     try {
-      const result = await actions.saveFinish({ minutes: minutesNum, title, nextAction: next });
+      const result = await actions.saveFinish({ minutes: minutesNum, title, nextAction: next, cueFollowed });
       setSaveState('saved');
       navigate('/');
       actions.toast(result === 'duplicate' ? 'この学習はすでに保存済みです。' : `${formatMinutes(minutesNum)}の学習を保存しました。`);
@@ -166,7 +172,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
 
           <div className="field">
             <label htmlFor="next" className="field-label">
-              次の一歩 <span className="optional">任意</span>
+              しおりを挟む（次の一手） <span className="optional">任意</span>
             </label>
             <input
               id="next"
@@ -176,7 +182,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
                 setNext(e.target.value);
                 if (errors.next) setErrors({ ...errors, next: undefined });
               }}
-              placeholder="例：続きの問題を3問解く"
+              placeholder="例：第11章の問題4〜6を解く"
               aria-invalid={!!errors.next || next.length > LIMITS.nextAction}
               aria-describedby="next-help next-err"
               autoComplete="off"
@@ -185,7 +191,11 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
             />
             <div className="field-meta">
               <p id="next-help" className="help">
-                {next.trim() ? '次回はこの内容から始められます' : '次回はこの内容から始められます（空欄なら未設定）'}
+                {keepBookmark && next === state.settings.nextAction
+                  ? 'しおりはそのまま残っています。変えることもできます'
+                  : next.trim()
+                    ? '次に開いたとき、この一手から始められます'
+                    : '次に開いたとき、この一手から始められます（空欄なら未設定）'}
               </p>
               <p className={`count${next.length > LIMITS.nextAction ? ' is-over' : ''}`} aria-hidden="true">
                 {next.length}/{LIMITS.nextAction}
@@ -194,7 +204,39 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
             <FieldError id="next-err">
               {errors.next || (next.length > LIMITS.nextAction ? `次の一歩は${LIMITS.nextAction}文字以内で入力してください。` : '')}
             </FieldError>
+            {looksVague(next) && <p className="hint">「何を・どこまで」を足すと、次回すぐ始められます（例：第11章の問題を3問）。</p>}
+            {suggestions.length > 0 && (
+              <div className="chips" role="group" aria-label="しおりの候補（今日の内容から）">
+                {suggestions.map((sg) => (
+                  <button type="button" key={sg} className="chip" onClick={() => setNext(sg)} disabled={saving}>
+                    {sg}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {askCue && (
+            <fieldset className="field cue-ask">
+              <legend className="field-label">
+                きっかけ通りに始めましたか？ <span className="optional">任意</span>
+              </legend>
+              <p className="help">「{state.settings.cue}」</p>
+              <div className="chips" role="radiogroup" aria-label="きっかけ通りに始めたか">
+                {(
+                  [
+                    ['yes', 'はい'],
+                    ['no', 'ちがうタイミング'],
+                  ] as const
+                ).map(([v, l]) => (
+                  <button type="button" role="radio" key={v} aria-checked={cueFollowed === v} className={`chip${cueFollowed === v ? ' is-on' : ''}`}
+                    onClick={() => setCueFollowed(cueFollowed === v ? null : v)} disabled={saving}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
         </div>
 
         <div className="finish-foot">

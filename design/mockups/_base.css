@@ -1,0 +1,11 @@
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Noto Sans CJK JP","Noto Sans JP",sans-serif;background:#e9ebe8;padding:40px;color:#142b45}
+.board{display:flex;gap:36px;align-items:flex-start}
+.board-head{margin-bottom:28px}
+.board-head h1{font-size:30px;font-weight:800}
+.board-head p{font-size:15px;color:#627180;margin-top:6px}
+.col{display:flex;flex-direction:column;gap:12px}
+.cap{font-size:14px;font-weight:700;color:#3d4a57}
+.phone{width:390px;height:844px;overflow:hidden;position:relative;border-radius:28px;box-shadow:0 2px 0 rgba(0,0,0,.04),0 12px 32px rgba(20,43,69,.12)}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 26px;font-size:14px;font-weight:700}
+.ex{font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(66,124,103,.12);color:#356b58;vertical-align:middle;margin-left:6px}

@@ -59,6 +59,8 @@ interface EditTextProps {
   tooLongMessage: string;
   onSave: (value: string) => Promise<void>;
   allowEmpty?: boolean;
+  /** 保存を妨げない助言（例：具体化のヒント）。空文字なら表示しない */
+  hint?: (value: string) => string;
 }
 
 /** 1行テキストの編集ダイアログ（次にやること・きっかけ） */
@@ -124,6 +126,11 @@ export function EditTextDialog(p: EditTextProps) {
           </p>
         </div>
         <FieldError id="edit-text-err">{err || (over ? p.tooLongMessage : '')}</FieldError>
+        {p.hint && p.hint(value) && (
+          <p className="hint" id="edit-text-hint" aria-live="polite">
+            {p.hint(value)}
+          </p>
+        )}
         <div className="dialog-actions">
           <button type="button" className="btn btn-ghost" onClick={p.onClose} disabled={busy}>
             キャンセル

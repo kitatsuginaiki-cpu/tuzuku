@@ -1,4 +1,12 @@
-import { BASELINE, LIMITS, RESUME_GAP_DAYS, DEFAULT_SUBJECT, DEFAULT_TARGET_MINUTES } from './config';
+import {
+  BASELINE,
+  LIMITS,
+  RESUME_GAP_DAYS,
+  DEFAULT_SUBJECT,
+  DEFAULT_TARGET_MINUTES,
+  DEFAULT_SMALL_MINUTES,
+  DEFAULT_SMALL_WHEN,
+} from './config';
 import { addDays, dayDiff, isValidDateString } from './dates';
 
 export type RecordSource = 'timer' | 'manual' | 'import_v3';
@@ -21,13 +29,44 @@ export interface StudyRecord {
   updatedAt: string;
   /** v3.1 から移行した分類（講義・問題演習など）。新規入力では使わない。 */
   category?: string;
+
+  /* ---- 以下は行動の事実（v6〜）。タイマー記録でのみ自動的に入る。推定値ではない。 ---- */
+  /** 通常の一手 or 小さな一手で始めたか */
+  mode?: 'standard' | 'small';
+  /** 保存してあったしおり（次の一手）から始めたか */
+  fromBookmark?: boolean;
+  /** 本人の任意回答：きっかけ通りに始めたか（未回答は null） */
+  cueFollowed?: 'yes' | 'no' | null;
+  /** 記録時の支援表示（比較検証用） */
+  supportMode?: SupportMode;
+  /** アプリを開いてから開始までの秒数（30分超・不明は null） */
+  openToStartSec?: number | null;
+  /** 終了時に次のしおりを残したか */
+  bookmarkLeft?: boolean;
+  /** 予定の曜日に学習したか（記録時点のプランで判定） */
+  plannedDay?: boolean;
 }
+
+export type SupportMode = 'plan' | 'simple';
 
 export interface Settings {
   subject: string;
+  /** しおり（次の一手） */
   nextAction: string;
+  /** きっかけ（もし〜したら） */
   cue: string;
   targetMinutes: number;
+  /** 小さな一手（できない日の代わり）。空なら従来の「2分だけ」 */
+  smallAction: string;
+  smallMinutes: number;
+  /** 小さな一手を使う場面（もし〜なら） */
+  smallWhen: string;
+  /** 予定の曜日（0=日〜6=土） */
+  planDays: number[];
+  /** プラン表示（plan）／記録中心（simple） */
+  supportMode: SupportMode;
+  /** 週の見直しを提案する */
+  weeklyReview: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
@@ -35,6 +74,12 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   nextAction: '',
   cue: '',
   targetMinutes: DEFAULT_TARGET_MINUTES,
+  smallAction: '',
+  smallMinutes: DEFAULT_SMALL_MINUTES,
+  smallWhen: DEFAULT_SMALL_WHEN,
+  planDays: [0, 1, 2, 3, 4, 5, 6],
+  supportMode: 'plan',
+  weeklyReview: true,
 }) as Settings;
 
 export function cleanText(s: unknown, max: number): string {
@@ -47,12 +92,22 @@ export function cleanText(s: unknown, max: number): string {
 export function sanitizeSettings(raw: unknown): Settings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const target = Number(r.targetMinutes);
+  const small = Number(r.smallMinutes);
+  const okMin = (n: number) => Number.isInteger(n) && n >= LIMITS.targetMin && n <= LIMITS.targetMax;
+  const days = Array.isArray(r.planDays)
+    ? [...new Set(r.planDays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+    : DEFAULT_SETTINGS.planDays;
   return {
     subject: typeof r.subject === 'string' ? cleanText(r.subject, LIMITS.subject) : DEFAULT_SETTINGS.subject,
     nextAction: cleanText(r.nextAction, LIMITS.nextAction),
     cue: cleanText(r.cue, LIMITS.cue),
-    targetMinutes:
-      Number.isInteger(target) && target >= LIMITS.targetMin && target <= LIMITS.targetMax ? target : DEFAULT_TARGET_MINUTES,
+    targetMinutes: okMin(target) ? target : DEFAULT_TARGET_MINUTES,
+    smallAction: cleanText(r.smallAction, LIMITS.smallAction),
+    smallMinutes: okMin(small) ? small : DEFAULT_SMALL_MINUTES,
+    smallWhen: typeof r.smallWhen === 'string' ? cleanText(r.smallWhen, LIMITS.smallWhen) : DEFAULT_SMALL_WHEN,
+    planDays: days,
+    supportMode: r.supportMode === 'simple' ? 'simple' : 'plan',
+    weeklyReview: r.weeklyReview === false ? false : true,
   };
 }
 

@@ -4,6 +4,7 @@ import { formatJpDate, formatMinutes, formatShortDate, localDate } from '../lib/
 import { buildBackup, ImportError, parseImportText, parseLegacyV3, type LegacyCandidates } from '../lib/backup';
 import { DEFAULT_SETTINGS, totalMinutes, type Settings as SettingsT, type StudyRecord } from '../lib/records';
 import { readLegacyV3 } from '../lib/storage';
+import type { Review } from '../lib/plan';
 import { useStore } from '../store';
 import { Dialog } from '../components/Dialog';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
@@ -12,20 +13,41 @@ import { IconDownload, IconUpload } from '../components/Icons';
 export function Settings({ navigate }: { navigate: (r: string) => void }) {
   const { state, actions } = useStore();
   const h1 = useFocusHeading<HTMLHeadingElement>();
-  const [form, setForm] = useState(() => toForm(state.settings));
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
-  const [restore, setRestore] = useState<{ settings: SettingsT; records: StudyRecord[]; exportedAt: string | null } | null>(null);
+  const [restore, setRestore] = useState<{ settings: SettingsT; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null } | null>(null);
   const [legacy, setLegacy] = useState<LegacyCandidates | null>(null);
   const [legacyFound, setLegacyFound] = useState<Record<string, unknown> | null>(null);
   const [resetStep, setResetStep] = useState<0 | 1>(0);
   const [copyText, setCopyText] = useState<string | null>(null);
+  // 切り替えは即座に画面へ反映し、保存に失敗したら元に戻す
+  const [support, setSupport] = useState(state.settings.supportMode);
+  const [weekly, setWeekly] = useState(state.settings.weeklyReview);
+  useEffect(() => {
+    setSupport(state.settings.supportMode);
+    setWeekly(state.settings.weeklyReview);
+  }, [state.settings.supportMode, state.settings.weeklyReview]);
+  function changeSupport(v: 'plan' | 'simple', label: string) {
+    const prev = support;
+    setSupport(v);
+    actions
+      .updateSettings({ supportMode: v })
+      .then(() => actions.toast(`「${label}」に切り替えました。`))
+      .catch(() => {
+        setSupport(prev);
+        actions.toast('保存できませんでした。', { tone: 'error' });
+      });
+  }
+  function changeWeekly(v: boolean) {
+    setWeekly(v);
+    actions.updateSettings({ weeklyReview: v }).catch(() => {
+      setWeekly(!v);
+      actions.toast('保存できませんでした。', { tone: 'error' });
+    });
+  }
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
 
-  useEffect(() => setForm(toForm(state.settings)), [state.settings]);
   useEffect(() => {
     readLegacyV3().then(setLegacyFound);
     const h = (e: Event) => {
@@ -36,34 +58,8 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
 
-  async function saveForm(e: React.FormEvent) {
-    e.preventDefault();
-    const errs: Record<string, string> = {};
-    const t = Number(form.targetMinutes);
-    if (!Number.isInteger(t) || t < LIMITS.targetMin || t > LIMITS.targetMax) errs.targetMinutes = `${LIMITS.targetMin}〜${LIMITS.targetMax}分の整数で入力してください。`;
-    if (form.subject.trim().length > LIMITS.subject) errs.subject = `${LIMITS.subject}文字以内で入力してください。`;
-    if (form.nextAction.trim().length > LIMITS.nextAction) errs.nextAction = `次の一歩は${LIMITS.nextAction}文字以内で入力してください。`;
-    if (form.cue.trim().length > LIMITS.cue) errs.cue = `きっかけは${LIMITS.cue}文字以内で入力してください。`;
-    setErrors(errs);
-    if (Object.keys(errs).length) return;
-    setBusy(true);
-    try {
-      await actions.updateSettings({
-        subject: form.subject.replace(/\s+/g, ' ').trim(),
-        nextAction: form.nextAction.replace(/\s+/g, ' ').trim(),
-        cue: form.cue.replace(/\s+/g, ' ').trim(),
-        targetMinutes: t,
-      });
-      actions.toast('設定を保存しました。');
-    } catch {
-      actions.toast('保存できませんでした。入力は保持しています。もう一度お試しください。', { tone: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function exportJson() {
-    const data = buildBackup(state.settings, state.records);
+    const data = buildBackup(state.settings, state.records, state.reviews);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -100,7 +96,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
 
   /** ダウンロードできない環境（埋め込み表示など）向け：バックアップをクリップボードへ */
   function copyJson() {
-    const text = JSON.stringify(buildBackup(state.settings, state.records));
+    const text = JSON.stringify(buildBackup(state.settings, state.records, state.reviews));
     const fallback = () => setCopyText(text);
     try {
       navigator.clipboard
@@ -124,24 +120,31 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
         </h1>
       </section>
 
-      <form className="settings-block" onSubmit={saveForm} noValidate aria-labelledby="s-study">
-        <h2 id="s-study" className="section-title">学習</h2>
-        <SettingField id="s-subject" label="学習対象" help="ホームと学習中の画面に表示します（空欄可）" error={errors.subject}>
-          <input id="s-subject" className="input" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} aria-invalid={!!errors.subject} aria-describedby="s-subject-help s-subject-err" />
-        </SettingField>
-        <SettingField id="s-next" label="次にやること" help={`すぐ手をつけられる行動を1つ（${LIMITS.nextAction}文字以内）`} error={errors.nextAction}>
-          <input id="s-next" className="input" value={form.nextAction} placeholder="例：仕訳の基本を3問解く" onChange={(e) => setForm({ ...form, nextAction: e.target.value })} aria-invalid={!!errors.nextAction} aria-describedby="s-next-help s-next-err" />
-        </SettingField>
-        <SettingField id="s-cue" label="学習のきっかけ" help="例：昼食後にコーヒーを淹れたら（任意）" error={errors.cue}>
-          <input id="s-cue" className="input" value={form.cue} placeholder="〇〇したら、学習を始める" onChange={(e) => setForm({ ...form, cue: e.target.value })} aria-invalid={!!errors.cue} aria-describedby="s-cue-help s-cue-err" />
-        </SettingField>
-        <SettingField id="s-target" label="「学習を始める」の目標時間（分）" help="目安です。時間になっても自動では終了・記録しません。" error={errors.targetMinutes}>
-          <input id="s-target" className="input input-num" type="number" inputMode="numeric" min={LIMITS.targetMin} max={LIMITS.targetMax} value={form.targetMinutes} onChange={(e) => setForm({ ...form, targetMinutes: e.target.value })} aria-invalid={!!errors.targetMinutes} aria-describedby="s-target-help s-target-err" />
-        </SettingField>
-        <button type="submit" className="btn btn-primary btn-sm settings-save" disabled={busy}>
-          {busy ? '保存中…' : '保存する'}
-        </button>
-      </form>
+      <section className="settings-block" aria-labelledby="s-support">
+        <h2 id="s-support" className="section-title">支援の表示</h2>
+        <p className="help">きっかけ・小さな一手・週の見直しは「プラン」画面で決めます。</p>
+        <div className="radio-list" role="radiogroup" aria-labelledby="s-support">
+          {(
+            [
+              ['plan', 'プラン表示（おすすめ）', 'きっかけ→一手、できない日の小さな一手、再開と週の見直しを表示します。'],
+              ['simple', '記録中心', '次にやること・開始・記録だけの簡素な表示にします。2つの使い方を比べたいときに。'],
+            ] as const
+          ).map(([v, l, d]) => (
+            <label key={v} className={`radio${support === v ? ' is-on' : ''}`}>
+              <input type="radio" name="support" value={v} checked={support === v} onChange={() => changeSupport(v, l.replace('（おすすめ）', ''))} />
+              <span>
+                <span className="radio-label">{l}</span>
+                <span className="help">{d}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <label className="check-row">
+          <input type="checkbox" checked={weekly} onChange={(e) => changeWeekly(e.target.checked)} />
+          <span>週に1度、見直しをホームで提案する（任意・1分）</span>
+        </label>
+        <button type="button" className="btn btn-outline settings-plan" onClick={() => navigate('/plan')}>プランを開く</button>
+      </section>
 
       <section className="settings-block" aria-labelledby="s-data">
         <h2 id="s-data" className="section-title">データ</h2>
@@ -250,22 +253,7 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
   );
 }
 
-function toForm(s: SettingsT) {
-  return { subject: s.subject, nextAction: s.nextAction, cue: s.cue, targetMinutes: String(s.targetMinutes) };
-}
-
-function SettingField({ id, label, help, error, children }: { id: string; label: string; help: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div className="field">
-      <label className="field-label" htmlFor={id}>{label}</label>
-      {children}
-      <p id={`${id}-help`} className="help">{help}</p>
-      <FieldError id={`${id}-err`}>{error}</FieldError>
-    </div>
-  );
-}
-
-function RestoreDialog({ data, onClose, onExport }: { data: { settings: SettingsT; records: StudyRecord[]; exportedAt: string | null } | null; onClose: () => void; onExport: () => void }) {
+function RestoreDialog({ data, onClose, onExport }: { data: { settings: SettingsT; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null } | null; onClose: () => void; onExport: () => void }) {
   const { state, actions } = useStore();
   const [busy, setBusy] = useState(false);
   if (!data) return <Dialog open={false} onClose={onClose} title="">{null}</Dialog>;
@@ -281,7 +269,7 @@ function RestoreDialog({ data, onClose, onExport }: { data: { settings: Settings
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
           setBusy(true);
           try {
-            await actions.replaceAll(data.settings, data.records);
+            await actions.replaceAll(data.settings, data.records, data.reviews);
             onClose();
             actions.toast(`復元しました（記録${data.records.length}件）。`);
           } catch {

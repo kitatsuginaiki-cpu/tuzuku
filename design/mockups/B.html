@@ -1,0 +1,62 @@
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css"><style>
+.phone{background:#F4F5F3}
+.p{padding:0 18px}
+.seg{display:flex;background:#e6e9e7;border-radius:12px;padding:4px;margin-top:6px}
+.seg span{flex:1;text-align:center;font-size:13px;font-weight:700;padding:9px 0;border-radius:9px;color:#627180}
+.seg .on{background:#fff;color:#142b45;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.flow{margin-top:18px;display:grid;gap:10px}
+.step{background:#fff;border:1px solid #e1e6e3;border-radius:14px;padding:14px 16px;display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center}
+.ic{width:28px;height:28px;border-radius:8px;background:#EDF3EF;color:#356b58;display:grid;place-items:center;font-size:13px;font-weight:800}
+.st .l{font-size:11px;color:#627180;font-weight:700}.st .v{font-size:15px;font-weight:700;margin-top:2px}
+.tag{font-size:11px;font-weight:700;color:#356b58;background:#EDF3EF;padding:4px 8px;border-radius:6px}
+.dur{display:flex;gap:8px;margin-top:16px}
+.dur span{flex:1;text-align:center;padding:12px 0;border-radius:12px;border:1px solid #d5dbd8;font-weight:700;font-size:14px;background:#fff}
+.dur .on{background:#142b45;color:#fff;border-color:#142b45}
+.slide{margin-top:16px;height:64px;border-radius:32px;background:#142b45;position:relative;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+.slide::before{content:"▶";position:absolute;left:6px;top:6px;width:52px;height:52px;border-radius:50%;background:#427C67;display:grid;place-items:center}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}
+.stat{background:#fff;border:1px solid #e1e6e3;border-radius:12px;padding:12px}
+.stat .n{font-size:22px;font-weight:800}.stat .l{font-size:11px;color:#627180}
+h2{font-size:22px;font-weight:800;margin-top:18px}
+.lab{font-size:12px;font-weight:700;color:#627180;margin:16px 0 8px}
+.field{background:#fff;border:1px solid #87949e;border-radius:12px;padding:13px 14px;font-size:15px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chip{font-size:12px;padding:7px 10px;border-radius:8px;background:#fff;border:1px solid #d5dbd8}
+.chip.on{background:#EDF3EF;border-color:#427C67;color:#356b58;font-weight:700}
+.prog{display:flex;gap:6px;margin-top:10px}.prog i{flex:1;height:4px;border-radius:2px;background:#d5dbd8}.prog i.on{background:#427C67}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:16px}
+.tile{background:#fff;border:1px solid #e1e6e3;border-radius:14px;padding:14px 10px;text-align:center;font-size:13px;font-weight:700;height:110px;display:flex;flex-direction:column;justify-content:center;gap:6px}
+.tile.main{background:#142b45;color:#fff}
+.nav{position:absolute;bottom:0;left:0;right:0;height:84px;background:#fff;border-top:1px solid #e1e6e3;display:flex;justify-content:space-around;padding-top:12px;font-size:12px;color:#627180}.nav .on{color:#356b58;font-weight:800}
+</style></head><body>
+<div class="board-head"><h1>B｜Functional &amp; Interactive —「今日の流れ」</h1><p>きっかけ → 一手 → しおり をステップとして並べ、時間をチップで選び、スライドで開始。状態と数値を常に見せる。</p></div>
+<div class="board">
+<div class="col"><div class="cap">ホーム（学習前）</div><div class="phone"><div class="status">9:41<span>●●●</span></div><div class="p">
+<div class="seg"><span class="on">今日</span><span>プラン</span><span>記録</span></div>
+<div class="flow">
+<div class="step"><div class="ic">1</div><div class="st"><div class="l">きっかけ</div><div class="v">昼食後にコーヒーを淹れたら</div></div><span class="tag">例</span></div>
+<div class="step"><div class="ic">2</div><div class="st"><div class="l">この一手</div><div class="v">第11章の仕訳問題を3問解く</div></div><span>✎</span></div>
+<div class="step"><div class="ic">3</div><div class="st"><div class="l">終えたら</div><div class="v">次のしおりを残す</div></div><span></span></div>
+</div>
+<div class="dur"><span>5分</span><span>10分</span><span class="on">20分</span><span>30分</span></div>
+<div class="slide">スライドして始める</div>
+<div class="stats"><div class="stat"><div class="n">3/5</div><div class="l">今週の予定日</div></div><div class="stat"><div class="n">2</div><div class="l">しおりから</div></div><div class="stat"><div class="n">1</div><div class="l">小さな一手</div></div></div>
+</div><div class="nav"><span class="on">今日</span><span>プラン</span><span>記録</span></div></div></div>
+
+<div class="col"><div class="cap">プラン設定（ステップ形式）</div><div class="phone"><div class="status">9:41<span>●●●</span></div><div class="p">
+<div class="prog"><i class="on"></i><i class="on"></i><i></i></div>
+<h2>2/3 できない日の一手</h2>
+<div class="lab">こんなときは…</div><div class="chips"><span class="chip on">時間がない</span><span class="chip on">気が重い</span><span class="chip">疲れている</span><span class="chip">予定が崩れた</span></div>
+<div class="lab">代わりにやること</div><div class="field">1問だけ解く</div>
+<div class="chips"><span class="chip">前回の1問を解き直す</span><span class="chip">テキストを開くだけ</span><span class="chip">講義を5分見る</span></div>
+<div class="lab">時間</div><div class="dur" style="margin-top:0"><span>2分</span><span class="on">5分</span><span>10分</span></div>
+<div class="slide" style="margin-top:40px">次へ</div>
+</div></div></div>
+
+<div class="col"><div class="cap">数日ぶりの再開</div><div class="phone"><div class="status">9:41<span>●●●</span></div><div class="p">
+<div class="seg"><span class="on">今日</span><span>プラン</span><span>記録</span></div>
+<h2>前回から3日 ・ 再開する</h2>
+<div class="stats"><div class="stat"><div class="n">10/29</div><div class="l">最後の学習</div></div><div class="stat"><div class="n">2/5</div><div class="l">先週の予定日</div></div><div class="stat"><div class="n">20分</div><div class="l">平均時間</div></div></div>
+<div class="grid3"><div class="tile main">▶<br>しおりから</div><div class="tile">◔<br>5分だけ</div><div class="tile">✎<br>プラン変更</div></div>
+<div class="step" style="margin-top:14px"><div class="ic">✎</div><div class="st"><div class="l">しおり</div><div class="v">第11章の仕訳問題を3問解く</div></div><span></span></div>
+</div><div class="nav"><span class="on">今日</span><span>プラン</span><span>記録</span></div></div></div>
+</div></body></html>

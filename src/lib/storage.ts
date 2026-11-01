@@ -5,6 +5,7 @@
 import { sanitizeActive, type ActiveSession } from './session';
 import { DEFAULT_SETTINGS, sanitizeSettings, type Settings, type StudyRecord } from './records';
 import { normalizeRecord } from './backup';
+import { DEFAULT_META, sanitizeMeta, sanitizeReviews, type Meta, type Review } from './plan';
 
 export type StorageKind = 'indexeddb' | 'localStorage' | 'memory';
 
@@ -12,6 +13,8 @@ export interface LoadedData {
   settings: Settings;
   active: ActiveSession | null;
   records: StudyRecord[];
+  meta: Meta;
+  reviews: Review[];
 }
 
 export interface Repository {
@@ -25,7 +28,10 @@ export interface Repository {
   deleteRecord(id: string): Promise<void>;
   /** 記録を追加（既存IDはスキップ）。追加件数を返す */
   addRecords(records: StudyRecord[], settings: Settings): Promise<number>;
-  replaceAll(settings: Settings, records: StudyRecord[]): Promise<void>;
+  replaceAll(settings: Settings, records: StudyRecord[], reviews?: Review[]): Promise<void>;
+  saveMeta(meta: Meta): Promise<void>;
+  /** 週の見直しを保存（見直し履歴の追加・メタ更新・設定更新を1回で） */
+  saveReview(review: Review, meta: Meta, settings: Settings): Promise<void>;
 }
 
 export const DB_NAME = 'tsuzuku-v5';
@@ -92,16 +98,39 @@ export class IdbRepository implements Repository {
   async load(): Promise<LoadedData> {
     const tx = this.db.transaction([KV, RECORDS], 'readonly');
     const kv = tx.objectStore(KV);
-    const [settings, active, records] = await Promise.all([
+    const [settings, active, records, meta, reviews] = await Promise.all([
       reqToPromise(kv.get('settings')),
       reqToPromise(kv.get('active')),
       reqToPromise(tx.objectStore(RECORDS).getAll()),
+      reqToPromise(kv.get('meta')),
+      reqToPromise(kv.get('reviews')),
     ]);
     return {
       settings: settings ? sanitizeSettings(settings) : { ...DEFAULT_SETTINGS },
       active: sanitizeActive(active, Date.now()),
       records: cleanRecords(records as unknown[]),
+      meta: meta ? sanitizeMeta(meta) : { ...DEFAULT_META },
+      reviews: sanitizeReviews(reviews),
     };
+  }
+
+  async saveMeta(meta: Meta) {
+    const tx = this.db.transaction(KV, 'readwrite');
+    tx.objectStore(KV).put(meta, 'meta');
+    await txDone(tx);
+  }
+
+  async saveReview(review: Review, meta: Meta, settings: Settings) {
+    const tx = this.db.transaction(KV, 'readwrite');
+    const kv = tx.objectStore(KV);
+    const g = kv.get('reviews');
+    g.onsuccess = () => {
+      const list = sanitizeReviews(g.result).filter((r) => r.id !== review.id);
+      kv.put([...list, review], 'reviews');
+      kv.put(meta, 'meta');
+      kv.put(settings, 'settings');
+    };
+    await txDone(tx);
   }
 
   async saveSettings(settings: Settings) {
@@ -166,12 +195,13 @@ export class IdbRepository implements Repository {
     return added;
   }
 
-  async replaceAll(settings: Settings, records: StudyRecord[]) {
+  async replaceAll(settings: Settings, records: StudyRecord[], reviews: Review[] = []) {
     const tx = this.db.transaction([KV, RECORDS], 'readwrite');
     const store = tx.objectStore(RECORDS);
     store.clear();
     for (const r of records) store.add(r);
     tx.objectStore(KV).put(settings, 'settings');
+    tx.objectStore(KV).put(reviews, 'reviews');
     await txDone(tx);
   }
 }
@@ -180,13 +210,13 @@ export class IdbRepository implements Repository {
 export class LocalStorageRepository implements Repository {
   readonly kind = 'localStorage' as const;
   static KEY = 'tsuzuku-v5-state';
-  private read(): { settings: unknown; active: unknown; records: unknown[] } {
+  private read(): { settings: unknown; active: unknown; records: unknown[]; meta: unknown; reviews: unknown } {
     const raw = localStorage.getItem(LocalStorageRepository.KEY);
-    if (!raw) return { settings: null, active: null, records: [] };
+    if (!raw) return { settings: null, active: null, records: [], meta: null, reviews: [] };
     const obj = JSON.parse(raw);
-    return { settings: obj.settings, active: obj.active, records: Array.isArray(obj.records) ? obj.records : [] };
+    return { settings: obj.settings, active: obj.active, records: Array.isArray(obj.records) ? obj.records : [], meta: obj.meta, reviews: obj.reviews };
   }
-  private write(data: { settings: unknown; active: unknown; records: unknown[] }) {
+  private write(data: { settings: unknown; active: unknown; records: unknown[]; meta: unknown; reviews: unknown }) {
     localStorage.setItem(LocalStorageRepository.KEY, JSON.stringify(data));
   }
   async load(): Promise<LoadedData> {
@@ -195,7 +225,18 @@ export class LocalStorageRepository implements Repository {
       settings: d.settings ? sanitizeSettings(d.settings) : { ...DEFAULT_SETTINGS },
       active: sanitizeActive(d.active, Date.now()),
       records: cleanRecords(d.records),
+      meta: d.meta ? sanitizeMeta(d.meta) : { ...DEFAULT_META },
+      reviews: sanitizeReviews(d.reviews),
     };
+  }
+  async saveMeta(meta: Meta) {
+    const d = this.read();
+    this.write({ ...d, meta });
+  }
+  async saveReview(review: Review, meta: Meta, settings: Settings) {
+    const d = this.read();
+    const list = sanitizeReviews(d.reviews).filter((r) => r.id !== review.id);
+    this.write({ ...d, reviews: [...list, review], meta, settings });
   }
   async saveSettings(settings: Settings) {
     const d = this.read();
@@ -208,7 +249,7 @@ export class LocalStorageRepository implements Repository {
   async completeSession(record: StudyRecord, settings: Settings) {
     const d = this.read();
     const dup = d.records.some((r) => (r as StudyRecord)?.id === record.id);
-    this.write({ settings, active: null, records: dup ? d.records : [...d.records, record] });
+    this.write({ ...d, settings, active: null, records: dup ? d.records : [...d.records, record] });
     return dup ? ('duplicate' as const) : ('saved' as const);
   }
   async putRecord(record: StudyRecord) {
@@ -224,12 +265,12 @@ export class LocalStorageRepository implements Repository {
     const d = this.read();
     const ids = new Set(d.records.map((r) => (r as StudyRecord)?.id));
     const fresh = records.filter((r) => !ids.has(r.id));
-    this.write({ settings, active: d.active, records: [...d.records, ...fresh] });
+    this.write({ ...d, settings, records: [...d.records, ...fresh] });
     return fresh.length;
   }
-  async replaceAll(settings: Settings, records: StudyRecord[]) {
+  async replaceAll(settings: Settings, records: StudyRecord[], reviews: Review[] = []) {
     const d = this.read();
-    this.write({ settings, active: d.active, records });
+    this.write({ ...d, settings, records, reviews });
   }
 }
 
@@ -239,8 +280,18 @@ export class MemoryRepository implements Repository {
   private settings: Settings = { ...DEFAULT_SETTINGS };
   private active: ActiveSession | null = null;
   private records = new Map<string, StudyRecord>();
+  private meta: Meta = { ...DEFAULT_META };
+  private reviews: Review[] = [];
   async load() {
-    return { settings: { ...this.settings }, active: this.active, records: [...this.records.values()] };
+    return { settings: { ...this.settings }, active: this.active, records: [...this.records.values()], meta: { ...this.meta }, reviews: [...this.reviews] };
+  }
+  async saveMeta(m: Meta) {
+    this.meta = { ...m };
+  }
+  async saveReview(r: Review, m: Meta, s: Settings) {
+    this.reviews = [...this.reviews.filter((x) => x.id !== r.id), r];
+    this.meta = { ...m };
+    this.settings = { ...s };
   }
   async saveSettings(s: Settings) {
     this.settings = { ...s };
@@ -271,9 +322,10 @@ export class MemoryRepository implements Repository {
     this.settings = { ...s };
     return n;
   }
-  async replaceAll(s: Settings, rs: StudyRecord[]) {
+  async replaceAll(s: Settings, rs: StudyRecord[], reviews: Review[] = []) {
     this.settings = { ...s };
     this.records = new Map(rs.map((r) => [r.id, r]));
+    this.reviews = [...reviews];
   }
 }
 

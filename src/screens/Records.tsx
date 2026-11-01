@@ -112,6 +112,12 @@ export function Records({ navigate }: { navigate: (r: string) => void }) {
                       {r.category ? ` · ${r.category}` : ''}
                       {r.source === 'manual' ? ' · 手動' : ''}
                     </span>
+                    {(r.mode === 'small' || r.fromBookmark) && (
+                      <span className="tags">
+                        {r.fromBookmark && <span className="tag">しおりから</span>}
+                        {r.mode === 'small' && <span className="tag">小さな一手</span>}
+                      </span>
+                    )}
                     <span className="record-title">{r.title}</span>
                     {r.note && <span className="record-note">{r.note}</span>}
                   </span>

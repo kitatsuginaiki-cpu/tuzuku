@@ -2,6 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { addManual, closeToasts, gotoRecords, open, setNext } from './helpers';
 
+/** 未設定時は「学習を始める」、しおりがあるときは「この一手を始める」 */
+const START = /^(学習を始める|この一手を始める)$/;
+
 /** WCAG 2.0/2.1/2.2 A・AA のルールで自動監査（自動検査で分かる範囲のみ） */
 async function audit(page: Page, label: string) {
   await closeToasts(page);
@@ -21,7 +24,7 @@ test('axe：主要画面・ダイアログに WCAG A/AA の自動検出違反が
   await audit(page, '次の一歩ダイアログ');
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: '学習を始める' }).click();
+  await page.getByRole('button', { name: START }).click();
   await page.clock.runFor(5 * 60_000);
   await audit(page, '学習中');
   await page.getByRole('button', { name: '一時停止' }).click();
@@ -44,6 +47,23 @@ test('axe：主要画面・ダイアログに WCAG A/AA の自動検出違反が
 
   await page.goto('/#options');
   await audit(page, '設定');
+});
+
+test('axe：プラン・週の見直し・再開画面', async ({ page }) => {
+  await open(page, '/#plan');
+  await page.locator('#plan-cue').fill('昼食後にコーヒーを淹れたら');
+  await page.locator('#plan-nextAction').fill('第11章の仕訳問題を3問解く');
+  await page.locator('#plan-smallAction').fill('1問だけ解く');
+  await audit(page, 'プラン');
+  await page.getByRole('button', { name: 'プランを保存' }).click();
+  await audit(page, '今日（プランあり）');
+  await page.goto('/#records');
+  await addManual(page, { date: '2026-10-28', minutes: 30, title: '問題集 第11章' });
+  await page.goto('/#');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('また、ここから。');
+  await audit(page, '再開');
+  await page.goto('/#review');
+  await audit(page, '週の見直し');
 });
 
 test('axe：記録0件の空状態', async ({ page }) => {

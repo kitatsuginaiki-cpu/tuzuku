@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { LIMITS, TWO_MINUTE_TARGET_MINUTES } from './lib/config';
-import { localDate } from './lib/dates';
+import { LIMITS, OPEN_TO_START_MAX_MS, REVIEW_INTERVAL_DAYS } from './lib/config';
+import { addDays, localDate } from './lib/dates';
 import {
   DEFAULT_SETTINGS,
   cleanText,
@@ -14,6 +14,7 @@ import {
   cancelCompleting,
   createSession,
   elapsedMs,
+  newId,
   pause,
   pausedTotalMs,
   resume,
@@ -21,6 +22,7 @@ import {
   type ActiveSession,
   type SessionMode,
 } from './lib/session';
+import { DEFAULT_META, isPlannedDay, smallPlan, type Meta, type Review, type ReviewChange } from './lib/plan';
 import { openRepository, requestPersistence, type Repository, type StorageKind } from './lib/storage';
 
 export interface Toast {
@@ -35,15 +37,26 @@ interface State {
   settings: Settings;
   active: ActiveSession | null;
   records: StudyRecord[];
+  meta: Meta;
+  reviews: Review[];
   storageKind: StorageKind | null;
   /** 再読み込み後に進行中セッションを復旧したか */
   recovered: boolean;
+  /** 直前にしおりを保存した（ホームで一度だけ知らせる） */
+  justBookmarked: boolean;
 }
 
 export interface FinishInput {
   minutes: number;
   title: string;
   nextAction: string;
+  cueFollowed: 'yes' | 'no' | null;
+}
+
+export interface ReviewInput {
+  change: ReviewChange;
+  ease: number | null;
+  note: string;
 }
 
 interface Actions {
@@ -58,16 +71,27 @@ interface Actions {
   updateSettings(patch: Partial<Settings>): Promise<void>;
   saveRecord(record: StudyRecord): Promise<void>;
   deleteRecord(id: string): Promise<void>;
-  replaceAll(settings: Settings, records: StudyRecord[]): Promise<void>;
+  replaceAll(settings: Settings, records: StudyRecord[], reviews?: Review[]): Promise<void>;
   addRecords(records: StudyRecord[], settings: Settings): Promise<number>;
+  saveReview(input: ReviewInput): Promise<void>;
+  snoozeReview(): Promise<void>;
   toast(message: string, opts?: { tone?: Toast['tone']; action?: Toast['action'] }): void;
   dismissToast(id: number): void;
   clearRecovered(): void;
+  clearBookmarked(): void;
 }
 
 const Ctx = createContext<{ state: State; actions: Actions; toasts: Toast[] } | null>(null);
 
 const CHANNEL = 'tsuzuku-sync';
+
+/** アプリが画面に出た時刻（「開いてから始めるまで」の計測用。端末内のみ） */
+let visibleSince = Date.now();
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) visibleSince = Date.now();
+  });
+}
 
 export function StoreProvider({ children, navigate }: { children: ReactNode; navigate: (route: string) => void }) {
   const [state, setState] = useState<State>({
@@ -75,8 +99,11 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
     settings: { ...DEFAULT_SETTINGS },
     active: null,
     records: [],
+    meta: { ...DEFAULT_META },
+    reviews: [],
     storageKind: null,
     recovered: false,
+    justBookmarked: false,
   });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const repo = useRef<Repository | null>(null);
@@ -116,11 +143,16 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
         data = await r.load();
       } catch (e) {
         console.error(e);
-        data = { settings: { ...DEFAULT_SETTINGS }, active: null, records: [] };
+        data = { settings: { ...DEFAULT_SETTINGS }, active: null, records: [], meta: { ...DEFAULT_META }, reviews: [] };
         toast('保存データを読み込めませんでした。', { tone: 'error' });
       }
+      // 初回利用日を記録（週の見直しの起点。端末内のみ）
+      if (!data.meta.firstUsedOn) {
+        data.meta = { ...data.meta, firstUsedOn: localDate() };
+        r.saveMeta(data.meta).catch(() => undefined);
+      }
       if (cancelled) return;
-      setState({ phase: 'ready', ...data, storageKind: r.kind, recovered: !!data.active });
+      setState((s) => ({ ...s, phase: 'ready', ...data, storageKind: r.kind, recovered: !!data.active }));
       if (data.active) navigate('/session');
       if (r.kind !== 'memory') void requestPersistence();
     })();
@@ -158,16 +190,23 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           navigate('/session');
           return;
         }
-        const target = mode === 'two_minute' ? TWO_MINUTE_TARGET_MINUTES : s.settings.targetMinutes;
+        const now = Date.now();
+        const small = smallPlan(s.settings);
+        const isSmall = mode === 'small';
+        // 小さな一手：本人が設定した一手。未設定なら、しおり（あれば）を2分だけ。
+        const title = isSmall && small.custom ? small.label : s.settings.nextAction;
+        const sinceOpen = now - visibleSince;
         const session = createSession({
           mode,
-          title: s.settings.nextAction,
+          title,
           subject: s.settings.subject,
-          targetMinutes: target,
-          now: Date.now(),
+          targetMinutes: isSmall ? small.minutes : s.settings.targetMinutes,
+          now,
+          fromBookmark: !!s.settings.nextAction && title === s.settings.nextAction,
+          openToStartMs: sinceOpen >= 0 && sinceOpen <= OPEN_TO_START_MAX_MS ? sinceOpen : null,
         });
         await commitActive(session);
-        setState((x) => ({ ...x, recovered: false }));
+        setState((x) => ({ ...x, recovered: false, justBookmarked: false }));
         navigate('/session');
       },
       pauseSession() {
@@ -213,9 +252,11 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
         const end = a.completingAt ?? now;
         const subjectFallback = s.settings.subject ? `${s.settings.subject}の学習` : '学習';
         const nowIso = new Date(now).toISOString();
+        const studyDate = localDate(a.startedAt);
+        const nextAction = cleanText(input.nextAction, LIMITS.nextAction);
         const record: StudyRecord = {
           id: a.id,
-          studyDate: localDate(a.startedAt),
+          studyDate,
           startedAt: new Date(a.startedAt).toISOString(),
           endedAt: new Date(end).toISOString(),
           minutes: input.minutes,
@@ -226,10 +267,17 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           source: 'timer',
           createdAt: nowIso,
           updatedAt: nowIso,
+          mode: a.mode,
+          fromBookmark: a.fromBookmark,
+          cueFollowed: input.cueFollowed,
+          supportMode: s.settings.supportMode,
+          openToStartSec: a.openToStartMs == null ? null : Math.round(a.openToStartMs / 1000),
+          bookmarkLeft: !!nextAction,
+          plannedDay: isPlannedDay(s.settings, studyDate),
         };
         const errs = validateRecord(record, localDate(now));
         if (hasErrors(errs)) throw new ValidationError(errs);
-        const settings: Settings = { ...s.settings, nextAction: cleanText(input.nextAction, LIMITS.nextAction) };
+        const settings: Settings = { ...s.settings, nextAction };
         const result = await repo.current!.completeSession(record, settings);
         setState((x) => ({
           ...x,
@@ -237,6 +285,7 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           settings,
           records: result === 'saved' ? [...x.records.filter((r) => r.id !== record.id), record] : x.records,
           recovered: false,
+          justBookmarked: !!nextAction,
         }));
         broadcast();
         return result;
@@ -276,9 +325,9 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
           },
         });
       },
-      async replaceAll(settings, records) {
-        await repo.current!.replaceAll(settings, records);
-        setState((s) => ({ ...s, settings, records }));
+      async replaceAll(settings, records, reviews = []) {
+        await repo.current!.replaceAll(settings, records, reviews);
+        setState((s) => ({ ...s, settings, records, reviews }));
         broadcast();
       },
       async addRecords(records, settings) {
@@ -287,10 +336,36 @@ export function StoreProvider({ children, navigate }: { children: ReactNode; nav
         broadcast();
         return n;
       },
+      async saveReview(input) {
+        const s = stateRef.current;
+        const today = localDate();
+        const review: Review = {
+          id: newId(),
+          date: today,
+          periodStart: addDays(today, -(REVIEW_INTERVAL_DAYS - 1)),
+          change: input.change,
+          ease: input.ease,
+          note: cleanText(input.note, LIMITS.reviewNote),
+          createdAt: new Date().toISOString(),
+        };
+        const meta: Meta = { ...s.meta, lastReviewOn: today, reviewSnoozedOn: null };
+        await repo.current!.saveReview(review, meta, s.settings);
+        setState((x) => ({ ...x, meta, reviews: [...x.reviews, review] }));
+        broadcast();
+      },
+      async snoozeReview() {
+        const meta: Meta = { ...stateRef.current.meta, reviewSnoozedOn: localDate() };
+        await repo.current!.saveMeta(meta);
+        setState((x) => ({ ...x, meta }));
+        broadcast();
+      },
       toast,
       dismissToast,
       clearRecovered() {
         setState((s) => ({ ...s, recovered: false }));
+      },
+      clearBookmarked() {
+        setState((s) => (s.justBookmarked ? { ...s, justBookmarked: false } : s));
       },
     }),
     [broadcast, commitActive, dismissToast, navigate, reload, toast],

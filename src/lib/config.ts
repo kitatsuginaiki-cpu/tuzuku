@@ -16,13 +16,25 @@ export const BASELINE = Object.freeze({
 export const RESUME_GAP_DAYS = 2;
 
 export const DEFAULT_TARGET_MINUTES = 20;
+/** 小さな一手が未設定のときの目標時間（従来の「2分だけ始める」） */
 export const TWO_MINUTE_TARGET_MINUTES = 2;
+/** 小さな一手の既定の目標時間（本人が設定した場合の初期値） */
+export const DEFAULT_SMALL_MINUTES = 5;
+/** 小さな一手を使う場面の既定文 */
+export const DEFAULT_SMALL_WHEN = '時間がない・気が重い';
+/** 週の見直しを提案する間隔（日） */
+export const REVIEW_INTERVAL_DAYS = 7;
+/** 「開いてから始めるまで」の計測を有効とみなす上限（これを超えたら記録しない） */
+export const OPEN_TO_START_MAX_MS = 30 * 60_000;
 export const DEFAULT_SUBJECT = '簿記3級';
 
 export const LIMITS = Object.freeze({
   subject: 30,
   nextAction: 80,
   cue: 60,
+  smallAction: 60,
+  smallWhen: 30,
+  reviewNote: 200,
   title: 100,
   note: 200,
   minutesMin: 1,

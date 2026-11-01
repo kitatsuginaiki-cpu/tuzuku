@@ -53,6 +53,8 @@ export async function noHorizontalOverflow(page: Page) {
 
 /** テストでは時計を止めているため通知が自動で消えない。必要に応じて閉じる */
 export async function closeToasts(page: Page) {
+  // モーダルが開いている間は背面の通知を操作できないので触らない
+  if (await page.locator('dialog[open]').count()) return;
   const btns = page.locator('.toast-close');
   while ((await btns.count()) > 0) await btns.first().click();
 }

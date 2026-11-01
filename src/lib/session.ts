@@ -4,7 +4,8 @@
  */
 import { LIMITS } from './config';
 
-export type SessionMode = 'standard' | 'two_minute';
+/** standard=通常の一手、small=小さな一手（旧 two_minute を含む） */
+export type SessionMode = 'standard' | 'small';
 export type SessionStatus = 'running' | 'paused' | 'completing';
 
 export interface ActiveSession {
@@ -25,6 +26,10 @@ export interface ActiveSession {
   completingAt: number | null;
   /** completing から戻るときに復帰する状態 */
   statusBeforeComplete: 'running' | 'paused' | null;
+  /** 保存してあったしおりから始めたか */
+  fromBookmark: boolean;
+  /** アプリを開いてから開始までのミリ秒（不明は null） */
+  openToStartMs: number | null;
 }
 
 export function newId(): string {
@@ -41,6 +46,8 @@ export function createSession(opts: {
   targetMinutes: number;
   now: number;
   id?: string;
+  fromBookmark?: boolean;
+  openToStartMs?: number | null;
 }): ActiveSession {
   return {
     id: opts.id ?? newId(),
@@ -54,6 +61,8 @@ export function createSession(opts: {
     pausedMs: 0,
     completingAt: null,
     statusBeforeComplete: null,
+    fromBookmark: opts.fromBookmark ?? false,
+    openToStartMs: opts.openToStartMs ?? null,
   };
 }
 
@@ -163,7 +172,7 @@ export function sanitizeActive(raw: unknown, now: number): ActiveSession | null 
   const before = r.statusBeforeComplete === 'running' || r.statusBeforeComplete === 'paused' ? r.statusBeforeComplete : null;
   return {
     id: r.id,
-    mode: r.mode === 'two_minute' ? 'two_minute' : 'standard',
+    mode: r.mode === 'small' || r.mode === 'two_minute' ? 'small' : 'standard',
     title: typeof r.title === 'string' ? r.title.slice(0, LIMITS.nextAction) : '',
     subject: typeof r.subject === 'string' ? r.subject.slice(0, LIMITS.subject) : '',
     targetSeconds: r.targetSeconds as number,
@@ -173,5 +182,7 @@ export function sanitizeActive(raw: unknown, now: number): ActiveSession | null 
     pausedMs: r.pausedMs as number,
     completingAt: status === 'completing' ? completingAt : null,
     statusBeforeComplete: status === 'completing' ? before : null,
+    fromBookmark: r.fromBookmark === true,
+    openToStartMs: num(r.openToStartMs) && (r.openToStartMs as number) >= 0 ? (r.openToStartMs as number) : null,
   };
 }

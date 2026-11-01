@@ -4,6 +4,7 @@
  */
 import { BASELINE, LIMITS } from './config';
 import { isValidDateString } from './dates';
+import { sanitizeReviews, type Review } from './plan';
 import {
   cleanText,
   hasErrors,
@@ -14,7 +15,7 @@ import {
 } from './records';
 
 export const BACKUP_FORMAT = 'tsuzuku-backup';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export interface BackupFile {
   format: typeof BACKUP_FORMAT;
@@ -23,23 +24,26 @@ export interface BackupFile {
   baseline: { minutes: number; asOf: string };
   settings: Settings;
   records: StudyRecord[];
+  /** v2〜：週の見直しの履歴 */
+  reviews: Review[];
 }
 
-export function buildBackup(settings: Settings, records: readonly StudyRecord[], now = new Date()): BackupFile {
+export function buildBackup(settings: Settings, records: readonly StudyRecord[], reviews: readonly Review[] = [], now = new Date()): BackupFile {
   return {
     format: BACKUP_FORMAT,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: now.toISOString(),
     baseline: { minutes: BASELINE.minutes, asOf: BASELINE.asOf },
-    settings: { ...settings },
+    settings: { ...settings, planDays: [...settings.planDays] },
     records: records.map((r) => ({ ...r })),
+    reviews: reviews.map((r) => ({ ...r })),
   };
 }
 
 export class ImportError extends Error {}
 
 export type ParsedImport =
-  | { kind: 'backup'; settings: Settings; records: StudyRecord[]; exportedAt: string | null }
+  | { kind: 'backup'; settings: Settings; records: StudyRecord[]; reviews: Review[]; exportedAt: string | null }
   | { kind: 'legacy_v3'; legacy: LegacyCandidates };
 
 /** ファイル内容を解析する。不正なら日本語メッセージ付きの ImportError。 */
@@ -84,6 +88,7 @@ function parseBackupObject(obj: Record<string, unknown>, today: string) {
   return {
     settings: sanitizeSettings(obj.settings),
     records,
+    reviews: sanitizeReviews(obj.reviews),
     exportedAt: typeof obj.exportedAt === 'string' ? obj.exportedAt : null,
   };
 }
@@ -118,6 +123,16 @@ export function normalizeRecord(raw: unknown): StudyRecord | null {
     updatedAt: isoOrNull(r.updatedAt) ?? now,
   };
   if (typeof r.category === 'string' && r.category) rec.category = cleanText(r.category, 20);
+  // v6 の行動の事実（あるものだけ保持）
+  if (r.mode === 'small' || r.mode === 'two_minute') rec.mode = 'small';
+  else if (r.mode === 'standard') rec.mode = 'standard';
+  if (typeof r.fromBookmark === 'boolean') rec.fromBookmark = r.fromBookmark;
+  if (r.cueFollowed === 'yes' || r.cueFollowed === 'no') rec.cueFollowed = r.cueFollowed;
+  if (r.supportMode === 'plan' || r.supportMode === 'simple') rec.supportMode = r.supportMode;
+  if (typeof r.openToStartSec === 'number' && Number.isInteger(r.openToStartSec) && r.openToStartSec >= 0 && r.openToStartSec <= 86400)
+    rec.openToStartSec = r.openToStartSec;
+  if (typeof r.bookmarkLeft === 'boolean') rec.bookmarkLeft = r.bookmarkLeft;
+  if (typeof r.plannedDay === 'boolean') rec.plannedDay = r.plannedDay;
   return rec;
 }
 

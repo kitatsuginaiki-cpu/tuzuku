@@ -1,16 +1,20 @@
 import { expect, test } from '@playwright/test';
 import { addManual, clock, closeToasts, gotoRecords, gotoToday, open, setNext } from './helpers';
 
+/** 未設定時は「学習を始める」、しおりがあるときは「この一手を始める」 */
+const START = /^(学習を始める|この一手を始める)$/;
+
 const MIN = 60_000;
 
 test.describe('初回・空状態', () => {
   test('未設定でも学習を始められ、架空の記録は表示しない', async ({ page }) => {
     await open(page);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('次の一歩から。');
-    await expect(page.locator('.next-title')).toHaveText('次にやることは未設定');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('今日の一手');
+    await expect(page.locator('.next-title')).toHaveText('次の一手は未設定');
     await expect(page.getByText('学習を始めてからでも決められます')).toBeVisible();
-    await expect(page.getByRole('button', { name: '学習を始める' })).toBeEnabled();
-    await expect(page.getByText('きっかけ：未設定')).toBeVisible();
+    await expect(page.getByRole('button', { name: START })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /きっかけを決める/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: '2分だけ始める' })).toBeVisible();
     // 架空の学習履歴・再開回数・連続日数などを出さない
     await expect(page.getByText(/連続|再開回数|日目/)).toHaveCount(0);
 
@@ -25,7 +29,7 @@ test.describe('初回・空状態', () => {
 
   test('未設定のまま開始 → 内容を終了時に入力 → 保存できる', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await expect(page.getByText('学習内容は終了時に入力できます')).toBeVisible();
     await page.clock.runFor(12 * MIN);
     await page.getByRole('button', { name: '学習を終える' }).click();
@@ -34,7 +38,7 @@ test.describe('初回・空状態', () => {
     await page.locator('#did').fill('講義#14を見る');
     await page.getByRole('button', { name: '保存して終了' }).click();
     await expect(page.locator('.home')).toBeVisible();
-    await expect(page.locator('.next-title')).toHaveText('次にやることは未設定');
+    await expect(page.locator('.next-title')).toHaveText('次の一手は未設定');
     await gotoRecords(page);
     await expect(page.locator('.record-item')).toHaveCount(1);
     await expect(page.locator('.record-title')).toHaveText('講義#14を見る');
@@ -46,7 +50,7 @@ test.describe('通常フロー', () => {
   test('ワンタップ開始・進捗と数値の整合・次の一歩の引き継ぎ・累計再計算', async ({ page }) => {
     await open(page);
     await setNext(page, '仕訳の基本を3問解く');
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await expect(page.getByRole('heading', { name: '仕訳の基本を3問解く' })).toBeVisible();
     await expect(clock(page)).toHaveText('20:00');
     await expect(page.locator('.bottomnav')).toHaveCount(0); // 学習中は下部ナビなし
@@ -74,7 +78,7 @@ test.describe('通常フロー', () => {
 
   test('実時間を保存前に修正できる', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(40 * MIN);
     await page.getByRole('button', { name: '学習を終える' }).click();
     await page.getByRole('button', { name: '時間を修正' }).click();
@@ -86,7 +90,7 @@ test.describe('通常フロー', () => {
 
   test('1分未満の計測は切り上げず、分数の入力を求める', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(20_000);
     await page.getByRole('button', { name: '学習を終える' }).click();
     await expect(page.getByText('計測は1分未満でした')).toBeVisible();
@@ -97,7 +101,7 @@ test.describe('通常フロー', () => {
 
   test('終了画面から戻ると計測が再開し、終了画面にいた時間は含めない', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(4 * MIN);
     await page.getByRole('button', { name: '学習を終える' }).click();
     await page.clock.runFor(3 * MIN);
@@ -112,7 +116,7 @@ test.describe('2分だけ始める', () => {
     await page.getByRole('button', { name: '2分だけ始める' }).click();
     await expect(clock(page)).toHaveText('02:00');
     await page.clock.runFor(2 * MIN + 30_000);
-    await expect(page.getByText('目標の2分を過ぎました。')).toBeVisible();
+    await expect(page.getByText(/小さな一手の2分になりました/)).toBeVisible();
     await expect(clock(page)).toHaveText('02:30'); // 経過時間表示に切り替わる
     await expect(page.locator('.session')).toBeVisible();
     await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
@@ -130,7 +134,7 @@ test.describe('2分だけ始める', () => {
 test.describe('一時停止・中断', () => {
   test('一時停止中は時間が進まず、再開で続きから', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(3 * MIN);
     await page.getByRole('button', { name: '一時停止' }).click();
     await expect(page.locator('.topbar-title')).toHaveText('一時停止中');
@@ -146,7 +150,7 @@ test.describe('一時停止・中断', () => {
 
   test('中断：戻る／記録して終了／記録せず終了（元に戻せる）', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(6 * MIN);
 
     await page.getByRole('button', { name: '中断' }).click();
@@ -160,7 +164,7 @@ test.describe('一時停止・中断', () => {
     await page.getByRole('button', { name: '中断' }).click();
     await dlg.getByRole('button', { name: '記録せず終了' }).click();
     await expect(page.locator('.home')).toBeVisible();
-    await expect(page.getByRole('button', { name: '学習を始める' })).toBeVisible();
+    await expect(page.getByRole('button', { name: START })).toBeVisible();
     await page.getByRole('button', { name: '元に戻す' }).click();
     await expect(page.locator('.session')).toBeVisible();
     await expect(clock(page)).toHaveText('14:00');
@@ -174,7 +178,7 @@ test.describe('一時停止・中断', () => {
 test.describe('復帰・永続化', () => {
   test('バックグラウンド復帰：経過時刻から再計算し、離れていた時間を知らせる', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(2 * MIN);
     // タブを非表示にした状態を再現（setInterval は止まったと仮定し、時計だけ進める）
     await page.evaluate(() => {
@@ -193,7 +197,7 @@ test.describe('復帰・永続化', () => {
   test('再読み込み後も進行中セッションを復旧（一時停止状態も保持）', async ({ page }) => {
     await open(page);
     await setNext(page, '問題集 第12章');
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(7 * MIN);
     await page.reload();
     await expect(page.locator('.session')).toBeVisible();
@@ -210,7 +214,7 @@ test.describe('復帰・永続化', () => {
 
   test('保存の二重送信を防止（連打しても1件）', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(10 * MIN);
     await page.getByRole('button', { name: '学習を終える' }).click();
     const btn = page.getByRole('button', { name: '保存して終了' });
@@ -227,7 +231,7 @@ test.describe('復帰・永続化', () => {
 
   test('保存失敗時は入力を保持し、再試行できる', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: '学習を始める' }).click();
+    await page.getByRole('button', { name: START }).click();
     await page.clock.runFor(10 * MIN);
     await page.getByRole('button', { name: '学習を終える' }).click();
     await page.locator('#next').fill('残りの問題');
@@ -311,7 +315,7 @@ test.describe('入力', () => {
     await open(page);
     await page.locator('.next-body').click();
     await page.locator('#edit-text').fill('あ'.repeat(81));
-    await expect(page.getByText('次の一歩は80文字以内で入力してください。')).toBeVisible();
+    await expect(page.getByText('次の一手は80文字以内で入力してください。')).toBeVisible();
     await expect(page.getByRole('button', { name: '保存する' })).toBeDisabled();
     await page.locator('#edit-text').fill('<img src=x onerror="window.__xss=1">');
     await page.getByRole('button', { name: '保存する' }).click();
@@ -319,12 +323,24 @@ test.describe('入力', () => {
     expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
   });
 
-  test('きっかけを設定できる', async ({ page }) => {
+  test('きっかけを設定できる（ホームの空欄 → プラン）', async ({ page }) => {
     await open(page);
-    await page.getByRole('button', { name: /きっかけ：未設定/ }).click();
-    await page.locator('#edit-text').fill('昼食後にコーヒーを淹れたら');
+    await page.getByRole('button', { name: /きっかけを決める/ }).click();
+    await page.getByRole('button', { name: '昼食後にコーヒーを淹れたら' }).click();
+    await page.getByRole('button', { name: 'プランを保存' }).click();
+    await expect(page.locator('.thread-cue')).toHaveText('昼食後にコーヒーを淹れたら');
+  });
+
+  test('一手が曖昧なときは具体化のヒント（保存は妨げない）', async ({ page }) => {
+    await open(page);
+    await page.locator('.next-body').click();
+    await page.locator('#edit-text').fill('簿記の勉強');
+    await expect(page.locator('.hint')).toContainText('何を・どこまで');
+    await page.locator('#edit-text').fill('第11章の問題を3問');
+    await expect(page.locator('.hint')).toHaveCount(0);
+    await page.locator('#edit-text').fill('簿記の勉強');
     await page.getByRole('button', { name: '保存する' }).click();
-    await expect(page.getByText('きっかけ：昼食後にコーヒーを淹れたら')).toBeVisible();
+    await expect(page.locator('.next-title')).toHaveText('簿記の勉強');
   });
 });
 
@@ -337,10 +353,13 @@ test.describe('再開ホーム', () => {
     await gotoToday(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('また、ここから。');
     await expect(page.getByText('前回の続きから', { exact: true })).toBeVisible();
-    await expect(page.getByText('前回保存した学習内容')).toBeVisible();
-    await expect(page.getByRole('button', { name: '前回の続きから始める' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '次にやることを変更' })).toBeVisible();
-    await page.getByRole('button', { name: '前回の続きから始める' }).click();
+    await expect(page.getByText('最後の学習：10月30日（金）')).toBeVisible();
+    await expect(page.getByRole('button', { name: /しおりから始める/ })).toContainText('問題集 第12章の続き');
+    await expect(page.getByRole('button', { name: /小さな一手で始める/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /プランを1つ変える/ })).toBeVisible();
+    // 空白日数・失敗の表示はしない
+    await expect(page.getByText(/日ぶり|日空き|連続|失敗/)).toHaveCount(0);
+    await page.getByRole('button', { name: /しおりから始める/ }).click();
     await expect(page.getByRole('heading', { name: '問題集 第12章の続き' })).toBeVisible();
   });
 
@@ -349,7 +368,7 @@ test.describe('再開ホーム', () => {
     await gotoRecords(page);
     await addManual(page, { date: '2026-10-31', minutes: 20, title: '講義' });
     await gotoToday(page);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('次の一歩から。');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('今日の一手');
   });
 });
 
@@ -400,6 +419,7 @@ test.describe('バックアップ・復元・移行', () => {
     await closeToasts(page);
     await page.getByRole('button', { name: '記録と設定を消去…' }).click();
     await page.getByRole('button', { name: '消去する' }).click();
+    await expect(page.getByText('記録と設定を消去しました。')).toBeVisible();
     await page.goto('/#options');
     await page.getByRole('button', { name: '貼り付けて復元' }).click();
     await page.locator('#paste-json').fill(copied);
@@ -416,8 +436,8 @@ test.describe('バックアップ・復元・移行', () => {
     await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
     await gotoToday(page);
     expect(new URL(page.url()).hash).not.toContain('/');
-    await page.getByRole('button', { name: '学習を始める' }).click();
-    expect(new URL(page.url()).hash).toBe('#session');
+    await page.getByRole('button', { name: START }).click();
+    await expect(page).toHaveURL(/#session$/);
   });
 
   test('不正なファイル・基準値の異なるファイルは読み込まない', async ({ page }) => {
@@ -450,7 +470,8 @@ test.describe('バックアップ・復元・移行', () => {
     await expect(page.locator('.big-total')).toHaveAttribute('aria-label', '18時間1分');
     await expect(page.locator('.record-date')).toContainText('講義');
     await gotoToday(page);
-    await expect(page.locator('.next-title')).toHaveText('第14講義の途中から');
+    // 取り込んだ最後の記録（10/25）から日が空いているので再開画面。しおりは引き継がれる
+    await expect(page.getByRole('button', { name: /しおりから始める/ })).toContainText('第14講義の途中から');
   });
 });
 

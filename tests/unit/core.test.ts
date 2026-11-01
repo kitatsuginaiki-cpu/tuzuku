@@ -141,7 +141,7 @@ describe('session timing (wall-clock based)', () => {
   });
 
   it('target reached does not auto-complete', () => {
-    const s = createSession({ mode: 'two_minute', title: '', subject: '', targetMinutes: 2, now: T0 });
+    const s = createSession({ mode: 'small', title: '', subject: '', targetMinutes: 2, now: T0 });
     expect(isOverTarget(s, T0 + 2 * MIN)).toBe(true);
     expect(s.status).toBe('running');
   });

@@ -62,7 +62,10 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
         )}
 
         <div className="session-head">
-          {active.subject && <p className="eyebrow">{active.subject}</p>}
+          <p className="eyebrow">
+            {active.mode === 'small' ? '小さな一手' : active.fromBookmark ? 'しおりから' : ''}
+            {active.subject && (active.mode === 'small' || active.fromBookmark ? ` · ${active.subject}` : active.subject)}
+          </p>
           <h1 className="session-title" ref={h1} tabIndex={-1}>
             {active.title || '学習内容は終了時に入力できます'}
           </h1>
@@ -97,8 +100,10 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
           </div>
           {over && (
             <p className="timer-over" role="status">
-              目標の{targetMin}分を過ぎました。このまま続けることも、終えることもできます。
-              {active.mode === 'two_minute' && state.settings.targetMinutes > targetMin && (
+              {active.mode === 'small'
+                ? `小さな一手の${targetMin}分になりました。このまま続けても、ここで終えても構いません。`
+                : `目標の${targetMin}分を過ぎました。このまま続けることも、終えることもできます。`}
+              {active.mode === 'small' && state.settings.targetMinutes > targetMin && (
                 <button type="button" className="link-btn" onClick={() => actions.changeTarget(state.settings.targetMinutes)}>
                   目標を{state.settings.targetMinutes}分にする
                 </button>
