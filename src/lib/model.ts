@@ -59,9 +59,8 @@ export interface AppSettings {
   milestonesDays: number[]; // 日
   /** 積み上げブロック1つの分数 */
   blockMinutes: number;
-  /** キャラクターの色とアクセサリー */
-  charaColor: 'standard' | 'blue' | 'orange';
-  charaAccessory: 'none' | 'scarf' | 'cap';
+  /** キャラクター（提供された PNG 素材の5種類から選ぶ） */
+  charaKind: 'tsuzukiboshi' | 'tsuzuneko' | 'tsuzuishi' | 'tsuzutori' | 'tsuzurisu';
   updatedAt: string;
 }
 
@@ -74,8 +73,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = Object.freeze({
   milestonesTime: [10, 25, 50, 100],
   milestonesDays: [10, 30, 50, 100],
   blockMinutes: 30,
-  charaColor: 'standard',
-  charaAccessory: 'none',
+  charaKind: 'tsuzukiboshi',
   updatedAt: '1970-01-01T00:00:00.000Z',
 }) as AppSettings;
 
@@ -165,8 +163,9 @@ export function sanitizeAppSettings(raw: unknown): AppSettings {
     milestonesTime: ms(r.milestonesTime, DEFAULT_APP_SETTINGS.milestonesTime),
     milestonesDays: ms(r.milestonesDays, DEFAULT_APP_SETTINGS.milestonesDays),
     blockMinutes: okInt(r.blockMinutes, 5, 120) ? r.blockMinutes : 30,
-    charaColor: r.charaColor === 'blue' || r.charaColor === 'orange' ? r.charaColor : 'standard',
-    charaAccessory: r.charaAccessory === 'scarf' || r.charaAccessory === 'cap' ? r.charaAccessory : 'none',
+    charaKind: (['tsuzukiboshi', 'tsuzuneko', 'tsuzuishi', 'tsuzutori', 'tsuzurisu'] as const).includes(r.charaKind as never)
+      ? (r.charaKind as AppSettings['charaKind'])
+      : 'tsuzukiboshi',
     updatedAt: typeof r.updatedAt === 'string' ? r.updatedAt : DEFAULT_APP_SETTINGS.updatedAt,
   };
 }

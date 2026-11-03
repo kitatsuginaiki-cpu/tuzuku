@@ -3,7 +3,7 @@ import { formatJpDate, formatShortDate, localDate, parseLocalDate } from '../lib
 import { calendar, formatHM, formatTotal, habitTotal, toBlocks, totalValue, type Total } from '../lib/accumulate';
 import type { AppSettings, Habit } from '../lib/model';
 import { todayOf, useChara, useStore } from '../store';
-import { CHARACTER_NAME, LEVELS } from '../lib/character';
+import { LEVELS } from '../lib/character';
 import { CharacterFace } from '../components/Character';
 import { Logo, useFocusHeading } from '../components/common';
 import { IconGear } from '../components/Icons';
@@ -73,7 +73,7 @@ function Growth() {
     <section className="stack-card growth" aria-labelledby="growth-title">
       <div className="stack-head">
         <h2 id="growth-title" className="h2">
-          {CHARACTER_NAME}の成長
+          {chara.name}の成長
         </h2>
         <p className="stack-total growth-level">
           Lv.{g.level.level} {g.level.name}
@@ -90,8 +90,7 @@ function Growth() {
               <CharacterFace
                 mood={reached ? (g.level.level === l.level ? 'happy' : 'normal') : 'normal'}
                 level={l.level}
-                color={chara.color}
-                accessory={g.level.level === l.level ? chara.accessory : 'none'}
+                kind={chara.kind}
                 locked={!reached}
                 size={92}
                 label={reached ? `Lv.${l.level} ${l.name}（到達）` : `Lv.${l.level} ${l.name}（つづけた日 ${l.days}日で解放）`}

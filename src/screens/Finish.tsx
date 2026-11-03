@@ -85,7 +85,7 @@ export function FinishScreen({ active, navigate }: { active: ActiveSession; navi
         <div className="finish-body">
           {chara.enabled ? (
             <div className="finish-buddy">
-              <CharacterFace mood="happy" level={chara.level} color={chara.color} accessory={chara.accessory} size={112} decorative />
+              <CharacterFace mood="happy" level={chara.level} kind={chara.kind} size={112} decorative />
             </div>
           ) : (
             <span className="check-badge" aria-hidden="true">

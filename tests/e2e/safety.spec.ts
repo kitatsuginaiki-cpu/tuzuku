@@ -91,7 +91,7 @@ test('バックアップを書き出すと「最後のバックアップ」が�
   await expect(page.locator('.backup-status')).toHaveText(/最後のバックアップ：11\/1 10:00/);
   await page.reload();
   await expect(page.locator('.backup-status')).toHaveText(/最後のバックアップ：11\/1 10:00/);
-  await expect(page.getByText(/バージョン：7\.2\.0/)).toBeVisible();
+  await expect(page.getByText(/バージョン：7\.3\.0/)).toBeVisible();
 });
 
 test('保存できないブラウザでは、今日の画面ではっきり警告する', async ({ page }) => {

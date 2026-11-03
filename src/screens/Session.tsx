@@ -77,7 +77,7 @@ export function SessionScreen({ active, navigate }: { active: ActiveSession; nav
 
         {chara.enabled && (
           <div className="session-buddy">
-            <CharacterFace mood={paused ? 'rest' : 'focus'} level={chara.level} color={chara.color} accessory={chara.accessory} size={92} />
+            <CharacterFace mood={paused ? 'rest' : 'focus'} level={chara.level} kind={chara.kind} size={92} />
             <p className="session-buddy-line">{paused ? 'ひと休み。戻ったら、また一緒に。' : '集中タイム。そばにいるよ。'}</p>
           </div>
         )}

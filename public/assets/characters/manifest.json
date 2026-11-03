@@ -1,0 +1,317 @@
+[
+  {
+    "character": "tsuzukiboshi",
+    "state": "neutral",
+    "file": "tsuzukiboshi__neutral.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 664242,
+    "sha256": "388736f2e3fafd148310c86ba4e0504258f3bcbe52af3fc39590fb5a0530d094"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "happy",
+    "file": "tsuzukiboshi__happy.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 206118,
+    "sha256": "5c7adbd45522854044f5f256c801ef810b69a32e70dfa20e9e4a919bf1aeddcc"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "focus",
+    "file": "tsuzukiboshi__focus.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 186616,
+    "sha256": "dd7bac0b356b5396d5341780c576aaae321a4d36c50c405870cfeca02f48ec27"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "determined",
+    "file": "tsuzukiboshi__determined.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 194685,
+    "sha256": "581677d9d05fc557ca6c82e66d577dbcb283d5cd56a51a443a4760ca8930b19a"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "rest",
+    "file": "tsuzukiboshi__rest.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 150398,
+    "sha256": "03b178433afd11595e798c92a6744d7f3a2438034775ba2f527bab73842331af"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "tired",
+    "file": "tsuzukiboshi__tired.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 165699,
+    "sha256": "a2016125ecb5331d170725f1a04e1212cb5e7b671b65ba05061373b75bbb369d"
+  },
+  {
+    "character": "tsuzukiboshi",
+    "state": "restart",
+    "file": "tsuzukiboshi__restart.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 212226,
+    "sha256": "dde8b385e2ceb2dc77f9a0458043b440834ac3d9f0c18f192dba39098dea13f6"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "neutral",
+    "file": "tsuzuneko__neutral.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 805842,
+    "sha256": "3ec6576f1999add1891e25b7b497446bdb8b4acbbe01f930ebd13b6c512b053a"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "happy",
+    "file": "tsuzuneko__happy.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 256688,
+    "sha256": "df414cb1af558ba3008e6b9624698f742d6ae4e104e55703be025268147cc037"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "focus",
+    "file": "tsuzuneko__focus.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 202661,
+    "sha256": "d1e5c1b1a4ef442114146e57596041b2815644f568745f0a90686a37e9aae0d6"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "determined",
+    "file": "tsuzuneko__determined.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 232113,
+    "sha256": "77be8a966089d7cf3d87a587b0b06d6cddaf38a12527527e1ed1597b3bfe3f16"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "rest",
+    "file": "tsuzuneko__rest.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 169094,
+    "sha256": "19399558f07cb60d039a126c366ef674276d0921eb97c7b9afcf786b7517adcf"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "tired",
+    "file": "tsuzuneko__tired.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 190621,
+    "sha256": "da6039bc0a6ba47d0e7329b544c23f2f878dbaa37f8e3850d409ad2dac3c5335"
+  },
+  {
+    "character": "tsuzuneko",
+    "state": "restart",
+    "file": "tsuzuneko__restart.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 244049,
+    "sha256": "ae0f8a7aefa7d4b24cbda6cc4e691059c298434cabb77f8388cf29508f9ff384"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "neutral",
+    "file": "tsuzuishi__neutral.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 591304,
+    "sha256": "79d407033ba23104cbf316c6bde2d8a3629ad70ebf6e35e3728e78924d7ad704"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "happy",
+    "file": "tsuzuishi__happy.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 216650,
+    "sha256": "adbfca47477a58be581bbf68ea20ca84aef6cfc1986f883df420f0935bcb3ef8"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "focus",
+    "file": "tsuzuishi__focus.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 220760,
+    "sha256": "891ff04b39f60788dfaaa03f381babb3131543a71d1c851d9adfa576c5d2ad03"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "determined",
+    "file": "tsuzuishi__determined.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 198072,
+    "sha256": "dbacba835cbb04dd2f1240ccb1b77b53934ef1d31d04e13974b7f4e28540b965"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "rest",
+    "file": "tsuzuishi__rest.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 196526,
+    "sha256": "40ccb05fa6f8504e77ec8c3ccd0fe769dfa449a11e102b1ff947fa5f09f8ac6c"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "tired",
+    "file": "tsuzuishi__tired.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 198539,
+    "sha256": "693e76039a82a70a4b54d84e8eafbd4208771abd8033f7047cf6babb89dfa6ee"
+  },
+  {
+    "character": "tsuzuishi",
+    "state": "restart",
+    "file": "tsuzuishi__restart.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 251972,
+    "sha256": "2814888827ad972074ac886cbb0048d09184ccd6c2a363013c49cfacc32ebcd9"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "neutral",
+    "file": "tsuzutori__neutral.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 416511,
+    "sha256": "ef5119827d0b226337545019794316f8a42e4c7907591a14556851ec4738f6b6"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "happy",
+    "file": "tsuzutori__happy.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 182851,
+    "sha256": "5cd1fcfacb0d824867a121b97358af178cefbd166e13c2a52c78dd49d91fcec6"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "focus",
+    "file": "tsuzutori__focus.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 154463,
+    "sha256": "a5788916dab8669a4ba27bcdc559c618df3ea9fe7a016e926985a7be10527189"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "determined",
+    "file": "tsuzutori__determined.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 157382,
+    "sha256": "078729e8e1e4804fc824a5e5c8f9edbdbd79e9f232e53dbe3e45283f90caf53e"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "rest",
+    "file": "tsuzutori__rest.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 158999,
+    "sha256": "fc2879276b48aebf8befddc91b64876639d5c0274935794d6b8f1a84857b3836"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "tired",
+    "file": "tsuzutori__tired.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 212026,
+    "sha256": "42a81b90376061e590f4e775a55598b66980204d450261e05e815d1613a6ae8d"
+  },
+  {
+    "character": "tsuzutori",
+    "state": "restart",
+    "file": "tsuzutori__restart.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 219222,
+    "sha256": "c095ce10b8462cab09064ffd027e0e769f2efbfb1251391b1649f024dc58cc87"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "neutral",
+    "file": "tsuzurisu__neutral.png",
+    "width": 1024,
+    "height": 1024,
+    "bytes": 670215,
+    "sha256": "b217cfd5f808c77b0769196ac7ad631c5f8a93b518dd29fdfc172a425dd53c61"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "happy",
+    "file": "tsuzurisu__happy.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 265674,
+    "sha256": "2476e504b67b6611389ebc44afb09169e6876d948cb583bfcf213b0f6cad1c65"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "focus",
+    "file": "tsuzurisu__focus.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 260880,
+    "sha256": "184443275dd4caeed28224a23ecb0f622477e58c8f3c9b6a179528625389362a"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "determined",
+    "file": "tsuzurisu__determined.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 256045,
+    "sha256": "b5a1509940d4b752e4aff5bf5c9d315f16a5b4114c684d22dbf58b9aac99b913"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "rest",
+    "file": "tsuzurisu__rest.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 211346,
+    "sha256": "f6f454e29437e59a6b773d3a3e2b2d6c094eaff5803d87a8178dec9cd6b59e50"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "tired",
+    "file": "tsuzurisu__tired.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 241563,
+    "sha256": "d16464cec06579292d937b33075e4589864a64fad9150819e38167524b36a748"
+  },
+  {
+    "character": "tsuzurisu",
+    "state": "restart",
+    "file": "tsuzurisu__restart.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 259721,
+    "sha256": "de395075d5e307c06ca8a547caf170ded76acc54a07310bf8bb5c278693eb854"
+  }
+]

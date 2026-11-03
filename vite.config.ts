@@ -28,7 +28,16 @@ function serviceWorkerPlugin(): Plugin {
         }
       };
       walk(outDir);
-      const precache = files.filter((f) => f !== 'sw.js' && !f.endsWith('.map') && f !== '_headers');
+      // キャラクター素材（35枚・約9MB）は、既定のつづきぼし7枚だけを先にキャッシュする。
+      // ほかのキャラクターは、選んで表示したときにキャッシュされる（以後はオフラインでも表示できる）。
+      const precache = files.filter(
+        (f) =>
+          f !== 'sw.js' &&
+          !f.endsWith('.map') &&
+          f !== '_headers' &&
+          f !== 'assets/characters/manifest.json' &&
+          (!f.startsWith('assets/characters/') || f.startsWith('assets/characters/tsuzukiboshi__')),
+      );
       const hash = createHash('sha256');
       for (const f of precache.sort()) hash.update(f).update(readFileSync(join(outDir, f)));
       const version = hash.digest('hex').slice(0, 12);

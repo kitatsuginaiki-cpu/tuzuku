@@ -20,7 +20,7 @@ import {
   type Habit,
 } from '../../src/lib/model';
 import { calendar, crossedMilestone, dayStatus, formatTotal, habitTotal, toBlocks } from '../../src/lib/accumulate';
-import { accessoryAvailable, CHARACTER_RULES, growthOf, LEVELS, lineFor, MOOD_LINES, moodFor, toSharedMood } from '../../src/lib/character';
+import { CHARACTER_KINDS, CHARACTER_RULES, CHARACTER_STATES, growthOf, LEVELS, lineFor, MOOD_LABEL, MOOD_LINES, MOOD_TO_STATE, moodFor, toSharedMood } from '../../src/lib/character';
 import { applyRemote, fullOutbox, sharedStatuses, SyncEngine } from '../../src/lib/sync';
 import { memoryRepository } from '../../src/lib/storage';
 import { DEFAULT_META } from '../../src/lib/plan';
@@ -214,7 +214,8 @@ describe('character mood (rules, no AI)', () => {
     expect(moodFor(strict).mood).toBe('angry');
     expect(moodFor({ ...strict, context: 'resume' }).mood).toBe('waiting');
     expect(moodFor({ ...strict, sessionActive: true }).mood).toBe('focus');
-    expect(moodFor({ ...strict, records: [...three, rec('read', today, { mode: 'small' })] }).mood).toBe('happy');
+    // 間をあけて戻ってきた日は「再スタート」の表情
+    expect(moodFor({ ...strict, records: [...three, rec('read', today, { mode: 'small' })] }).mood).toBe('restart');
   });
   it('archived habits are ignored', () => {
     const arch = { ...daily, archived: true };
@@ -420,13 +421,21 @@ describe('つづきぼしの成長（Lv.1〜5）', () => {
     expect(growthOf(many.slice(0, 29)).level.level).toBe(3);
     expect(growthOf(many.slice(0, 30)).level.level).toBe(4);
   });
-  it('アクセサリー：マフラーは12〜2月、学びの帽子は Lv.3 か節目で手に入る', () => {
-    expect(accessoryAvailable('scarf', { today: '2026-12-01', level: 1, milestones: 0 }).ok).toBe(true);
-    expect(accessoryAvailable('scarf', { today: '2026-02-28', level: 1, milestones: 0 }).ok).toBe(true);
-    expect(accessoryAvailable('scarf', { today: '2026-11-01', level: 5, milestones: 3 }).ok).toBe(false);
-    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 2, milestones: 0 }).ok).toBe(false);
-    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 3, milestones: 0 }).ok).toBe(true);
-    expect(accessoryAvailable('cap', { today: '2026-11-01', level: 1, milestones: 1 }).ok).toBe(true);
+  it('キャラクター素材：5キャラ×7表情のPNGがすべて置かれ、どの状態もいずれかの素材に対応する', async () => {
+    const { existsSync, readFileSync } = await import('node:fs');
+    const { createHash } = await import('node:crypto');
+    const manifest = JSON.parse(readFileSync('public/assets/characters/manifest.json', 'utf8')) as { file: string; sha256: string }[];
+    expect(manifest).toHaveLength(35);
+    for (const k of CHARACTER_KINDS)
+      for (const st of CHARACTER_STATES) {
+        const f = `public/assets/characters/${k}__${st}.png`;
+        expect(existsSync(f), f).toBe(true);
+        const m = manifest.find((e) => e.file === `${k}__${st}.png`)!;
+        expect(createHash('sha256').update(readFileSync(f)).digest('hex'), `${f} は提供された素材と同じ`).toBe(m.sha256);
+      }
+    for (const mood of Object.keys(MOOD_LABEL) as (keyof typeof MOOD_TO_STATE)[]) expect(CHARACTER_STATES).toContain(MOOD_TO_STATE[mood]);
+    // 7表情すべてがどこかの場面で使われる
+    expect(new Set(Object.values(MOOD_TO_STATE))).toEqual(new Set(CHARACTER_STATES));
   });
   it('おやすみ：今日の予定の習慣をすべて休むと決めた日', () => {
     const today = '2026-11-10';
@@ -437,6 +446,7 @@ describe('つづきぼしの成長（Lv.1〜5）', () => {
   });
   it('仲間に送る表情はサーバーの許可リストの5種類に丸める', () => {
     expect(toSharedMood('focus')).toBe('happy');
+    expect(toSharedMood('restart')).toBe('happy');
     expect(toSharedMood('rest')).toBe('normal');
     expect(toSharedMood('angry')).toBe('angry');
   });
@@ -462,5 +472,16 @@ describe('学習時間の整合性（架空の加算をしない）', () => {
     const m = migrateFromV6({}, []);
     expect(m.habits).toEqual([]);
     expect(m.records).toEqual([]);
+  });
+});
+
+describe('再スタートの表情', () => {
+  const today = '2026-11-10';
+  const base = { settings: S(), today, hour: 10, firstUsedOn: '2026-10-01' };
+  it('今日やった日で、前の「やった」が2日以上前なら再スタート。昨日もやっていれば嬉しい', () => {
+    expect(moodFor({ ...base, habits: [reading()], records: [rec('read', '2026-11-07'), rec('read', today)] }).mood).toBe('restart');
+    expect(moodFor({ ...base, habits: [reading()], records: [rec('read', '2026-11-09'), rec('read', today)] }).mood).toBe('happy');
+    expect(moodFor({ ...base, habits: [reading()], records: [rec('read', today)] }).mood).toBe('happy'); // 初めての日
+    expect(moodFor({ ...base, habits: [reading()], records: [rec('read', '2026-11-07'), rec('read', today)], justMilestone: true }).mood).toBe('happy');
   });
 });

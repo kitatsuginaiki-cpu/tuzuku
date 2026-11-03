@@ -5,7 +5,7 @@ import { defaultSmall } from '../lib/plan';
 import { habitsDueForReview, shouldPromptRest, todayView, type HabitToday } from '../lib/today';
 import { elapsedMs } from '../lib/session';
 import { formatTotal, habitTotal, type DayStatus } from '../lib/accumulate';
-import { CHARACTER_NAME, lineFor, moodFor, MOOD_LABEL } from '../lib/character';
+import { lineFor, moodFor, MOOD_LABEL } from '../lib/character';
 import { HABIT_TEMPLATES, habitFromTemplate, MAX_HABITS, type CopingPlan, type Habit } from '../lib/model';
 import { todayOf, useChara, useNow, useStore } from '../store';
 import { Logo, useFocusHeading } from '../components/common';
@@ -63,11 +63,11 @@ export function Home({ navigate }: { navigate: (r: string) => void }) {
       <StorageNotice navigate={navigate} />
 
       {settings.characterEnabled && list.length > 0 && (
-        <section className={`buddy is-${mood.mood}`} aria-label={`${CHARACTER_NAME}のようす`}>
-          <CharacterFace mood={mood.mood} level={chara.level} color={chara.color} accessory={chara.accessory} size={124} />
+        <section className={`buddy is-${mood.mood}`} aria-label={`${chara.name}のようす`}>
+          <CharacterFace mood={mood.mood} level={chara.level} kind={chara.kind} size={124} />
           <div className="buddy-talk">
             <p className="buddy-name">
-              {CHARACTER_NAME}
+              {chara.name}
               <span className="lv-badge">
                 Lv.{chara.level} {chara.growth.level.name}
               </span>

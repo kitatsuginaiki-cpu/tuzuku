@@ -36,6 +36,8 @@ export const card = (page: Page, name: string) => page.locator('.habit-card', { 
 export const clock = (page: Page) => page.locator('.timer-clock');
 
 async function nav(page: Page, name: string, hash: string) {
+  // 確認ダイアログが閉じきる前だと closeToasts は何もしないため、閉じるのを待つ（その直後に通知が出る）
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
   await closeToasts(page); // 通知は下部ナビの位置に出るため（× で閉じてからナビを使う）
   const link = page.getByRole('navigation', { name: 'メイン' }).getByRole('link', { name, exact: true }).first();
   if (await link.isVisible()) await link.click();

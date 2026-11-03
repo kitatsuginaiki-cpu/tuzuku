@@ -4,8 +4,8 @@ import { formatJpDate, formatMinutes, formatShortDate, localDate } from '../lib/
 import { buildBackup, ImportError, parseImportText, parseLegacyV3, type LegacyCandidates, type ParsedBackup } from '../lib/backup';
 import { readLegacyV3 } from '../lib/storage';
 import { DEFAULT_APP_SETTINGS, type Strictness } from '../lib/model';
-import { ACCESSORY_LABEL, accessoryAvailable, COLOR_LABEL, MOOD_LABEL, type CharaAccessory, type CharaColor, type Mood } from '../lib/character';
-import { CharacterFace } from '../components/Character';
+import { CHARACTER_INFO, CHARACTER_KINDS, STATE_LABEL, type CharacterState } from '../lib/character';
+import { CharacterImage } from '../components/Character';
 import { todayOf, useChara, useStore } from '../store';
 import { Dialog } from '../components/Dialog';
 import { FieldError, TopBar, useFocusHeading } from '../components/common';
@@ -422,7 +422,16 @@ const STRICT: [Strictness, string, string][] = [
   ['normal', 'ふつう（おすすめ）', '予定の日に2日あくと心配そうにします。怒りません。'],
   ['strict', 'きびしい', '予定の日に3日あくと怒ります。再開すればすぐに嬉しそうな顔に戻ります。'],
 ];
-const MOODS: Mood[] = ['happy', 'focus', 'normal', 'waiting', 'rest', 'worried', 'angry'];
+/** 素材の7表情と、アプリで出る場面（MOOD_TO_STATE と同じ対応） */
+const GALLERY: [CharacterState, string][] = [
+  ['neutral', 'ふだん'],
+  ['happy', '今日やった・節目'],
+  ['focus', '計測中'],
+  ['determined', '夕方まで予定がまだ／きびしい設定で3日あいた'],
+  ['rest', '休むと決めた日・一時停止中'],
+  ['tired', '予定の日に2日あいた'],
+  ['restart', '間をあけて、また始めた日'],
+];
 
 function CharacterSettings() {
   const { state, actions } = useStore();
@@ -436,7 +445,7 @@ function CharacterSettings() {
   const fail = () => actions.toast('保存できませんでした。', { tone: 'error' });
   return (
     <section className="settings-block" aria-labelledby="s-chara">
-      <h2 id="s-chara" className="section-title">キャラクター「つづきぼし」</h2>
+      <h2 id="s-chara" className="section-title">キャラクター</h2>
       <label className="check-row">
         <input type="checkbox" role="switch" checked={on} onChange={(e) => {
           const v = e.target.checked;
@@ -445,50 +454,33 @@ function CharacterSettings() {
         }} />
         <span>今日の画面にキャラクターを表示する</span>
       </label>
-      <p className="help">表情は実際の記録だけで決まります（予定の曜日・やった日・休むと決めた日）。予定のない日と休むと決めた日は、途切れに数えません。つづけた日が増えると進化します（3日・10日・30日・66日）。</p>
-      <ul className="mood-gallery" aria-label="表情の一覧">
-        {MOODS.map((m) => (
-          <li key={m}>
-            <CharacterFace mood={m} level={chara.level} color={chara.color} accessory={chara.accessory} size={64} decorative />
-            <span>{MOOD_LABEL[m]}</span>
-          </li>
-        ))}
-      </ul>
+      <p className="help">表情は実際の記録だけで決まります（予定の曜日・やった日・休むと決めた日）。予定のない日と休むと決めた日は、途切れに数えません。つづけた日が増えると段階（Lv）が上がります（3日・10日・30日・66日）。</p>
       <fieldset disabled={!on}>
-        <legend className="field-label">色</legend>
-        <div className="chips" role="radiogroup" aria-label="つづきぼしの色">
-          {(Object.keys(COLOR_LABEL) as CharaColor[]).map((c) => (
-            <button type="button" role="radio" key={c} aria-checked={state.settings.charaColor === c} className={`chip chara-chip${state.settings.charaColor === c ? ' is-on' : ''}`}
-              onClick={() => actions.updateSettings({ charaColor: c }).catch(fail)}>
-              <CharacterFace mood="normal" level={2} color={c} size={34} decorative />
-              {COLOR_LABEL[c]}
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset disabled={!on}>
-        <legend className="field-label">アクセサリー</legend>
-        <div className="chips" role="radiogroup" aria-label="つづきぼしのアクセサリー">
-          {(Object.keys(ACCESSORY_LABEL) as CharaAccessory[]).map((a) => {
-            const av = accessoryAvailable(a, { today: chara.today, level: chara.level, milestones: chara.milestones });
+        <legend className="field-label">キャラクター</legend>
+        <div className="chara-pick" role="radiogroup" aria-label="キャラクター">
+          {CHARACTER_KINDS.map((k) => {
+            const on2 = state.settings.charaKind === k;
             return (
-              <button type="button" role="radio" key={a} aria-checked={state.settings.charaAccessory === a} disabled={!av.ok}
-                aria-describedby={`acc-${a}`} className={`chip${state.settings.charaAccessory === a ? ' is-on' : ''}`}
-                onClick={() => actions.updateSettings({ charaAccessory: a }).catch(fail)}>
-                {ACCESSORY_LABEL[a]}
-                {!av.ok && <span className="sr-only">（{av.reason}）</span>}
+              <button type="button" role="radio" key={k} aria-checked={on2} className={`chara-option${on2 ? ' is-on' : ''}`}
+                onClick={() => actions.updateSettings({ charaKind: k }).catch(fail)}>
+                <CharacterImage kind={k} state="neutral" size={72} alt="" decorative />
+                <span className="chara-option-name">{CHARACTER_INFO[k].name}</span>
+                <span className="chara-option-desc">{CHARACTER_INFO[k].desc}</span>
               </button>
             );
           })}
         </div>
-        <ul className="help acc-notes">
-          {(['scarf', 'cap'] as CharaAccessory[]).map((a) => (
-            <li key={a} id={`acc-${a}`}>
-              {ACCESSORY_LABEL[a]}：{accessoryAvailable(a, { today: chara.today, level: chara.level, milestones: chara.milestones }).reason}
-            </li>
-          ))}
-        </ul>
       </fieldset>
+      <p className="field-label spaced">{chara.name}の表情と、出る場面</p>
+      <ul className="mood-gallery" aria-label="表情の一覧">
+        {GALLERY.map(([st, when]) => (
+          <li key={st}>
+            <CharacterImage kind={chara.kind} state={st} size={72} alt="" decorative />
+            <span className="mood-name">{STATE_LABEL[st]}</span>
+            <span className="mood-when">{when}</span>
+          </li>
+        ))}
+      </ul>
       <fieldset disabled={!on}>
         <legend className="field-label">厳しさ</legend>
         <div className="radio-list" role="radiogroup" aria-label="厳しさ">

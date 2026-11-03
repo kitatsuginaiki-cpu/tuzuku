@@ -2,6 +2,7 @@
  * キャラクター「つづきぼし」：続ける力をあらわす小さな彗星。
  * 表情は実際の記録だけからルールで決める（推定・AI は使わない）。CHARACTER_RULES で調整できる。
  *  - 集中    ：計測中
+ *  - 再スタート：今日やった日で、その前の記録から2日以上あいていた（戻ってきた）
  *  - 嬉しい  ：今日やった（休み以外の記録あり）／節目に到達
  *  - おやすみ：今日の予定の習慣を、すべて「休むと決めた」
  *  - 待っている：今日の予定がまだで、夕方（17時）以降
@@ -13,15 +14,16 @@
  * 成長（Lv.1〜5）は「つづけた日」（やった・小さな一手の記録がある日。習慣をまたいで重複なし）で決まる。
  * 積み上げと同じく、間があいても下がらない。
  */
-import { addDays, parseLocalDate } from './dates';
+import { addDays, dayDiff, parseLocalDate } from './dates';
+import { RESUME_GAP_DAYS } from './config';
 import { isDone, type AppSettings, type Habit } from './model';
 import type { StudyRecord } from './records';
 
-export type Mood = 'happy' | 'focus' | 'normal' | 'waiting' | 'rest' | 'worried' | 'angry';
+export type Mood = 'happy' | 'restart' | 'focus' | 'normal' | 'waiting' | 'rest' | 'worried' | 'angry';
 /** 仲間に共有する表情（サーバー側の許可リストと同じ5種類） */
 export type SharedMood = 'happy' | 'normal' | 'waiting' | 'worried' | 'angry';
 export function toSharedMood(m: Mood): SharedMood {
-  return m === 'focus' ? 'happy' : m === 'rest' ? 'normal' : m;
+  return m === 'focus' || m === 'restart' ? 'happy' : m === 'rest' ? 'normal' : m;
 }
 
 export const CHARACTER_RULES = Object.freeze({
@@ -34,6 +36,7 @@ export const CHARACTER_RULES = Object.freeze({
 
 export const MOOD_LABEL: Record<Mood, string> = {
   happy: '嬉しそう',
+  restart: '再スタート',
   focus: '集中している',
   normal: 'やる気十分',
   waiting: '待っている',
@@ -42,7 +45,58 @@ export const MOOD_LABEL: Record<Mood, string> = {
   angry: '怒っている',
 };
 
-export const CHARACTER_NAME = 'つづきぼし';
+/* ------------------------------ 素材（PNG） ------------------------------ */
+
+/** 提供された素材の5キャラクター（public/assets/characters/{kind}__{state}.png） */
+export const CHARACTER_KINDS = ['tsuzukiboshi', 'tsuzuneko', 'tsuzuishi', 'tsuzutori', 'tsuzurisu'] as const;
+export type CharacterKind = (typeof CHARACTER_KINDS)[number];
+/** 素材の7表情 */
+export const CHARACTER_STATES = ['neutral', 'happy', 'focus', 'determined', 'rest', 'tired', 'restart'] as const;
+export type CharacterState = (typeof CHARACTER_STATES)[number];
+
+/** 名前と説明は、本人のデザイン案（A〜E案）による */
+export const CHARACTER_INFO: Record<CharacterKind, { name: string; desc: string }> = {
+  tsuzukiboshi: { name: 'つづきぼし', desc: '「続ける力」をあらわす、小さな彗星のような相棒' },
+  tsuzuneko: { name: 'つづねこ', desc: '学びに寄り添う、まじめでやさしい猫の相棒' },
+  tsuzuishi: { name: 'つづいし', desc: 'コツコツ積み上げる、おだやかで安定した相棒' },
+  tsuzutori: { name: 'つづとり', desc: '軽やかに始められる、前向きな相棒' },
+  tsuzurisu: { name: 'つづりす', desc: '成長と発見を楽しむ、好奇心のある相棒' },
+};
+
+export const STATE_LABEL: Record<CharacterState, string> = {
+  neutral: 'ふつう',
+  happy: 'うれしい',
+  focus: '集中',
+  determined: 'やるぞ',
+  rest: 'おやすみ',
+  tired: 'しょんぼり',
+  restart: '再スタート',
+};
+
+/**
+ * アプリの状態 → 素材の表情。素材に「怒り」はないため、怒る場面（きびしい設定）は「やるぞ」の表情にする。
+ * 「待っている」（夕方まで予定がまだ）も「やるぞ」で後押しする。
+ */
+export const MOOD_TO_STATE: Record<Mood, CharacterState> = {
+  happy: 'happy',
+  restart: 'restart',
+  focus: 'focus',
+  normal: 'neutral',
+  waiting: 'determined',
+  rest: 'rest',
+  worried: 'tired',
+  angry: 'determined',
+};
+export function moodToState(m: Mood): CharacterState {
+  return MOOD_TO_STATE[m];
+}
+
+export function isCharacterKind(v: unknown): v is CharacterKind {
+  return typeof v === 'string' && (CHARACTER_KINDS as readonly string[]).includes(v);
+}
+
+/** 既定のキャラクター名（設定で選んだものは CHARACTER_INFO から） */
+export const CHARACTER_NAME = CHARACTER_INFO.tsuzukiboshi.name;
 
 /* ------------------------------ 成長 ------------------------------ */
 
@@ -92,28 +146,9 @@ export function growthOf(records: readonly StudyRecord[]): Growth {
   };
 }
 
-/* ------------------------------ 見た目 ------------------------------ */
-
-export type CharaColor = 'standard' | 'blue' | 'orange';
-export type CharaAccessory = 'none' | 'scarf' | 'cap';
-export const COLOR_LABEL: Record<CharaColor, string> = { standard: 'スタンダード', blue: 'ブルー', orange: 'オレンジ' };
-export const ACCESSORY_LABEL: Record<CharaAccessory, string> = { none: 'なし', scarf: 'マフラー', cap: '学びの帽子' };
-
-/** アクセサリーが使えるか（使えないときは理由） */
-export function accessoryAvailable(a: CharaAccessory, opts: { today: string; level: number; milestones: number }): { ok: boolean; reason: string } {
-  if (a === 'none') return { ok: true, reason: '' };
-  if (a === 'scarf') {
-    const m = Number(opts.today.slice(5, 7));
-    return m === 12 || m <= 2 ? { ok: true, reason: '冬（12〜2月）の期間限定' } : { ok: false, reason: '12〜2月に使えます' };
-  }
-  return opts.level >= 3 || opts.milestones > 0
-    ? { ok: true, reason: 'Lv.3 か、節目への到達で手に入れました' }
-    : { ok: false, reason: 'Lv.3 になるか、節目に届くと手に入ります' };
-}
-
-/** 状態ごとのセリフ（短く・人格否定や罪悪感をあおる言葉は使わない） */
 export const MOOD_LINES: Record<Mood, string[]> = {
-  happy: ['いい流れです！この調子でつづけよう。', '今日の分、積み上がったね。', 'ひとつ進んだ。光がふえたよ。'],
+  happy: ['いい流れです！この調子でつづけよう。', '今日の分、積み上がったね。', 'ひとつ進んだね。'],
+  restart: ['おかえり！また一緒につづけよう。', 'ひと休みして、再スタート。', '戻ってきてくれてうれしい。'],
   focus: ['集中タイム。そばにいるよ。', 'いい集中。', 'この一手に、まっすぐ。'],
   normal: ['よし、やるぞ！今日の一手はここ。', 'きっかけが来たら始めよう。', 'しおりから、いつでも。'],
   waiting: ['まだ間に合うよ。小さな一手でも。', 'ここで待ってる。', '1分だけでも、つながるよ。'],
@@ -178,8 +213,18 @@ export function moodFor(i: MoodInput): MoodResult {
   const restToday =
     !doneToday && plannedNow.length > 0 && plannedNow.every((h) => todayRecs.some((r) => r.habitId === h.id && !isDone(r)));
 
+  // 再スタート：今日やった日で、その前の「やった」が2日以上前（間をあけて戻ってきた）
+  let comeback = false;
+  if (doneToday) {
+    let prev: string | null = null;
+    for (const r of i.records)
+      if (r.studyDate < i.today && isDone(r) && active.some((h) => h.id === r.habitId) && (!prev || r.studyDate > prev)) prev = r.studyDate;
+    comeback = !!prev && dayDiff(prev, i.today) >= RESUME_GAP_DAYS;
+  }
+
   let mood: Mood;
   if (i.sessionActive) mood = 'focus';
+  else if (doneToday && comeback && !i.justMilestone) mood = 'restart';
   else if (doneToday || i.justMilestone) mood = 'happy';
   else if (restToday) mood = 'rest';
   else if (i.settings.strictness === 'strict' && missed >= CHARACTER_RULES.angryMissed) mood = 'angry';

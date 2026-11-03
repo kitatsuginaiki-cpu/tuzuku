@@ -25,7 +25,7 @@ import {
   type Habit,
 } from './lib/model';
 import { crossedMilestone, habitTotal } from './lib/accumulate';
-import { accessoryAvailable, growthOf, type CharaAccessory } from './lib/character';
+import { CHARACTER_INFO, growthOf } from './lib/character';
 import { openRepository, requestPersistence, type AccountState, type Op, type Repository, type Snapshot, type StorageKind, type SyncKind } from './lib/storage';
 import { SyncEngine, type SyncStatus } from './lib/sync';
 import { reviewStateOf } from './lib/today';
@@ -697,14 +697,10 @@ export function useNow(enabled = true): number {
   return now;
 }
 
-/** つづきぼしの今の見た目（成長段階・色・使えるアクセサリー） */
+/** キャラクターの今の状態（選んだキャラクター・成長段階） */
 export function useChara() {
   const { state } = useStore();
   const g = growthOf(state.records);
-  const milestones = Object.values(state.meta.milestonesShown).reduce((n, v) => n + v.length, 0);
-  const today = todayOf(state.settings);
-  const acc: CharaAccessory = accessoryAvailable(state.settings.charaAccessory, { today, level: g.level.level, milestones }).ok
-    ? state.settings.charaAccessory
-    : 'none';
-  return { growth: g, level: g.level.level, color: state.settings.charaColor, accessory: acc, milestones, today, enabled: state.settings.characterEnabled };
+  const kind = state.settings.charaKind;
+  return { growth: g, level: g.level.level, kind, name: CHARACTER_INFO[kind].name, enabled: state.settings.characterEnabled };
 }

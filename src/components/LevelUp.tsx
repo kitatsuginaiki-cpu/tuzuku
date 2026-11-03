@@ -1,4 +1,4 @@
-import { CHARACTER_NAME, LEVELS } from '../lib/character';
+import { LEVELS } from '../lib/character';
 import { useChara, useStore } from '../store';
 import { Dialog } from './Dialog';
 import { CharacterFace } from './Character';
@@ -19,11 +19,11 @@ export function LevelUpDialog() {
             <span className="burst b2" />
             <span className="burst b3" />
             <span className="burst b4" />
-            <CharacterFace mood="happy" level={L.level} color={chara.color} accessory={chara.accessory} size={200} decorative />
+            <CharacterFace mood="happy" level={L.level} kind={chara.kind} size={200} decorative />
           </div>
           <p className="levelup-desc">{L.desc}</p>
           <p className="levelup-fact">
-            {CHARACTER_NAME}が進化しました。つづけた日 <strong className="num">{chara.growth.days}日</strong>
+            {chara.name}が進化しました。つづけた日 <strong className="num">{chara.growth.days}日</strong>
           </p>
           {next && <p className="help">次は Lv.{next.level} {next.name}（つづけた日 {next.days}日）</p>}
           <div className="dialog-actions">

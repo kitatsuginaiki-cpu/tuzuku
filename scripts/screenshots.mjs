@@ -8,7 +8,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 const BASE = process.env.BASE_URL ?? 'http://localhost:4173/';
 const OUT = 'docs/screenshots';
 mkdirSync(OUT, { recursive: true });
-// 画面のスクリーンショットだけ作り直す（character-evolution.png は scripts/character-sheet.tsx が作る）
+// 画面のスクリーンショットを作り直す（キャラクターは public/assets/characters の PNG がそのまま写る）
 for (const f of readdirSync(OUT)) if (/^(mobile|desktop|mood)-|^character-moods/.test(f)) rmSync(`${OUT}/${f}`);
 const NOW = new Date('2026-11-01T13:10:00+09:00');
 const MIN = 60_000;
@@ -124,6 +124,13 @@ for (const [w, h, tag] of [
   await shot(p, `${tag}-08-records`, tag === 'mobile');
   await p.goto(`${BASE}#options`);
   await shot(p, `${tag}-09-settings`, tag === 'mobile');
+  if (tag === 'mobile') {
+    // キャラクターの選択と表情の一覧（提供された PNG をそのまま表示している部分）
+    const sec = p.locator('section[aria-labelledby="s-chara"]');
+    await sec.scrollIntoViewIfNeeded();
+    await p.waitForFunction(() => [...document.querySelectorAll('section[aria-labelledby="s-chara"] img')].every((i) => i.complete && i.naturalWidth > 0));
+    await sec.screenshot({ path: `${OUT}/${tag}-12-characters.png`, animations: 'disabled' });
+  }
   await card(p, NAMES.boki).count();
   await p.goto(BASE + '#');
   await card(p, NAMES.reading).getByRole('button', { name: '読書を編集' }).click();
@@ -131,13 +138,14 @@ for (const [w, h, tag] of [
   await ctx.close();
 }
 
-// キャラクターの5つの表情（実際のルールで出したもの）
+// 今日の画面のキャラクター（実際のルールで出したもの）
 const MOODS = [
   ['happy', 'ふつう', '2026-11-01T10:00:00+09:00', 'done'],
   ['normal', 'ふつう', '2026-11-01T10:00:00+09:00', 'yesterday'],
   ['waiting', 'ふつう', '2026-11-01T19:00:00+09:00', 'yesterday'],
   ['worried', 'ふつう', '2026-11-01T10:00:00+09:00', 'gap'],
   ['angry', 'きびしい', '2026-11-01T10:00:00+09:00', 'gap'],
+  ['restart', 'ふつう', '2026-11-01T10:00:00+09:00', 'comeback'],
 ];
 for (const [mood, strict, at, kind] of MOODS) {
   const ctx = await newContext(390, 400);
@@ -145,7 +153,11 @@ for (const [mood, strict, at, kind] of MOODS) {
   await setup(first, ['reading']);
   await first.close();
   const p = await openAt(ctx, new Date(at));
-  if (kind !== 'gap') {
+  if (kind === 'comeback') {
+    await p.goto(`${BASE}#records`);
+    await pastDay(p, '2026-10-27');
+    await pastDay(p, '2026-11-01');
+  } else if (kind !== 'gap') {
     await p.goto(`${BASE}#records`);
     await pastDay(p, kind === 'done' ? '2026-11-01' : '2026-10-31');
   } else {
@@ -154,7 +166,7 @@ for (const [mood, strict, at, kind] of MOODS) {
   }
   if (strict !== 'ふつう') {
     await p.goto(`${BASE}#options`);
-    await p.getByRole('radio', { name: new RegExp(strict) }).check();
+    await p.getByRole('radio', { name: new RegExp('^' + strict) }).check();
   }
   await p.goto(BASE + '#');
   await p.locator(`.buddy.is-${mood}`).waitFor();

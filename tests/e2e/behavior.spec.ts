@@ -163,34 +163,46 @@ async function startedAWeekAgo(page: Page, keys: Parameters<typeof setup>[1]) {
   return p2;
 }
 
-test.describe('キャラクター「つづ」', () => {
+/** 表示中のキャラクター画像の素材ファイル名 */
+async function charaFile(scope: import('@playwright/test').Locator) {
+  const img = scope.locator('img.chara-img').first();
+  await expect(img).toBeVisible();
+  // 画像が実際に読み込まれている（壊れた画像ではない）
+  await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+  return (await img.getAttribute('src'))!.split('/').pop();
+}
+
+test.describe('キャラクター（提供された PNG 素材）', () => {
   test('ふつう：予定の日に記録がない日が続くと心配。やると嬉しそうになる', async ({ page }) => {
     const p = await startedAWeekAgo(page, ['reading']);
     const buddy = p.locator('.buddy');
     await expect(buddy).toHaveClass(/is-worried/);
     await expect(buddy.getByRole('img', { name: /^つづきぼし Lv\.1（はじまり）：心配そう$/ })).toBeVisible();
+    expect(await charaFile(buddy)).toBe('tsuzukiboshi__tired.png');
     await expect(buddy.getByText('予定の日に6日、記録がありません')).toBeVisible();
-    // 間があいた習慣は、再開の3つの選択肢から始める
+    // 間があいた習慣は、再開の3つの選択肢から始める → 戻ってきた日は「再スタート」
     await card(p, READ).getByRole('button', { name: /^やった/ }).click();
-    await expect(buddy).toHaveClass(/is-happy/);
-    await expect(buddy.getByRole('img', { name: /つづきぼし.*：嬉しそう/ })).toBeVisible();
+    await expect(buddy).toHaveClass(/is-restart/);
+    await expect(buddy.getByRole('img', { name: /つづきぼし.*：再スタート/ })).toBeVisible();
+    expect(await charaFile(buddy)).toBe('tsuzukiboshi__restart.png');
   });
 
   test('きびしい：3日以上あくと怒る。小さな一手でもすぐ嬉しそうに戻る（再開を罰しない）', async ({ page }) => {
     const p = await startedAWeekAgo(page, ['reading']);
     await p.goto('/#options');
-    await p.getByRole('radio', { name: /きびしい/ }).check();
+    await p.getByRole('radio', { name: /^きびしい/ }).check();
     await gotoToday(p);
     await expect(p.locator('.buddy')).toHaveClass(/is-angry/);
+    expect(await charaFile(p.locator('.buddy'))).toBe('tsuzukiboshi__determined.png'); // 素材に怒りはないため「やるぞ」
     await expect(p.locator('.buddy-line')).not.toHaveText(/ダメ|失敗|サボ/);
     await card(p, READ).getByRole('button', { name: /^小さな一手でやった/ }).click();
-    await expect(p.locator('.buddy')).toHaveClass(/is-happy/);
+    await expect(p.locator('.buddy')).toHaveClass(/is-restart/);
   });
 
   test('やさしい：怒り・心配の顔は出さない。キャラクターはオフにもできる', async ({ page }) => {
     const p = await startedAWeekAgo(page, ['reading']);
     await p.goto('/#options');
-    await p.getByRole('radio', { name: /やさしい/ }).check();
+    await p.getByRole('radio', { name: /^やさしい/ }).check();
     await gotoToday(p);
     await expect(p.locator('.buddy')).toHaveClass(/is-waiting/);
     await p.goto('/#options');
@@ -204,13 +216,36 @@ test.describe('キャラクター「つづ」', () => {
     await setup(page, ['note']); // 日曜だけ
     const buddy = page.locator('.buddy');
     await expect(buddy).toHaveClass(/is-normal/);
+    expect(await charaFile(buddy)).toBe('tsuzukiboshi__neutral.png');
     await expect(buddy.getByText('今日は予定のない日です')).toBeVisible();
   });
 
-  test('設定画面で表情を確認できる', async ({ page }) => {
-    await open(page, '/#options');
+  test('設定画面で7つの表情と出る場面を確認でき、5キャラクターから選べる（画像はすべて読み込まれる）', async ({ page }) => {
+    await open(page);
+    await setup(page, ['reading']);
+    await page.goto('/#options');
     const g = page.getByRole('list', { name: '表情の一覧' });
-    for (const l of ['嬉しそう', '集中している', 'やる気十分', '待っている', 'おやすみ中', '心配そう', '怒っている']) await expect(g.getByText(l)).toBeVisible();
+    for (const l of ['ふつう', 'うれしい', '集中', 'やるぞ', 'おやすみ', 'しょんぼり', '再スタート']) await expect(g.getByText(l, { exact: true })).toBeVisible();
+    const pick = page.getByRole('radiogroup', { name: 'キャラクター' });
+    const names = ['つづきぼし', 'つづねこ', 'つづいし', 'つづとり', 'つづりす'];
+    const kinds = ['tsuzukiboshi', 'tsuzuneko', 'tsuzuishi', 'tsuzutori', 'tsuzurisu'];
+    await expect(pick.getByRole('radio')).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
+      await pick.getByRole('radio', { name: new RegExp(names[i]) }).click();
+      await expect(pick.getByRole('radio', { name: new RegExp(names[i]) })).toHaveAttribute('aria-checked', 'true');
+      // 7表情の一覧が、選んだキャラクターの素材に切り替わり、すべて読み込める
+      const srcs = await g.locator('img').evaluateAll((els) => els.map((e) => (e as HTMLImageElement).getAttribute('src')!.split('/').pop()));
+      expect(srcs).toEqual(['neutral', 'happy', 'focus', 'determined', 'rest', 'tired', 'restart'].map((st) => `${kinds[i]}__${st}.png`));
+      await expect
+        .poll(() => g.locator('img').evaluateAll((els) => els.every((e) => (e as HTMLImageElement).complete && (e as HTMLImageElement).naturalWidth > 0)))
+        .toBe(true);
+    }
+    // 選んだキャラクターが今日の画面にも出る
+    await gotoToday(page);
+    await expect(page.locator('.buddy-name')).toContainText('つづりす');
+    expect(await charaFile(page.locator('.buddy'))).toBe('tsuzurisu__neutral.png');
+    await card(page, READ).getByRole('button', { name: 'やった', exact: true }).click();
+    expect(await charaFile(page.locator('.buddy'))).toBe('tsuzurisu__happy.png');
   });
 
   test('計測中は集中、休むと決めた日はおやすみの顔', async ({ page }) => {
@@ -218,8 +253,10 @@ test.describe('キャラクター「つづ」', () => {
     await setup(page, ['boki', 'reading']);
     await card(page, BOKI).getByRole('button', { name: 'しおりから始める' }).click();
     await expect(page.locator('.session-buddy').getByRole('img', { name: /集中している/ })).toBeVisible();
+    expect(await charaFile(page.locator('.session-buddy'))).toBe('tsuzukiboshi__focus.png');
     await page.getByRole('button', { name: '一時停止' }).click();
     await expect(page.locator('.session-buddy').getByRole('img', { name: /おやすみ中/ })).toBeVisible();
+    expect(await charaFile(page.locator('.session-buddy'))).toBe('tsuzukiboshi__rest.png');
     await page.getByRole('button', { name: '再開' }).click();
     await page.getByRole('button', { name: 'ホームに戻る（計測は続きます）' }).click();
     await expect(page.locator('.buddy')).toHaveClass(/is-focus/);
@@ -263,21 +300,20 @@ test.describe('つづきぼしの進化', () => {
     await expect(page.getByText('次の進化 Lv.3 かたち まで あと7日')).toBeVisible();
   });
 
-  test('色を変えられ、学びの帽子は節目に届くと手に入る', async ({ page }) => {
+  test('お祝い・積み上げ・終了画面も同じ素材を使い、壊れた画像がない', async ({ page }) => {
     await open(page);
     await setup(page, ['boki']);
-    await page.goto('/#options');
-    await page.getByRole('radio', { name: /ブルー/ }).click();
-    await expect(page.getByRole('radio', { name: /ブルー/ })).toHaveAttribute('aria-checked', 'true');
-    const cap = page.getByRole('radio', { name: /学びの帽子/ });
-    await expect(cap).toBeDisabled();
-    await expect(page.getByRole('radio', { name: /マフラー/ })).toBeDisabled(); // 11月は使えない
-    await gotoRecords(page);
-    await addManual(page, { date: '2026-10-31', minutes: 444, title: 'まとめて演習' }); // 25時間の節目
-    await page.goto('/#options');
-    await expect(cap).toBeEnabled();
-    await cap.click();
-    await expect(cap).toHaveAttribute('aria-checked', 'true');
+    await card(page, BOKI).getByRole('button', { name: 'しおりから始める' }).click();
+    await page.clock.runFor(5 * MIN);
+    await page.getByRole('button', { name: '終える', exact: true }).click();
+    expect(await charaFile(page.locator('.finish-buddy'))).toBe('tsuzukiboshi__happy.png');
+    await page.getByRole('button', { name: '保存して終了' }).click();
+    await gotoStack(page);
+    const evo = page.getByRole('list', { name: '成長の段階' });
+    await expect(evo.locator('img.chara-img')).toHaveCount(5);
+    await expect.poll(() => page.locator('img.chara-img').evaluateAll((els) => els.filter((e) => !(e as HTMLImageElement).complete || (e as HTMLImageElement).naturalWidth === 0).length)).toBe(0);
+    // 未到達の段階は CSS で色を抜くだけ（同じ素材）
+    expect(await evo.locator('img.is-locked').first().getAttribute('src')).toMatch(/tsuzukiboshi__/);
   });
 });
 
